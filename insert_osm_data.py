@@ -50,11 +50,13 @@ class OsmHandler(ContentHandler):
             ref = long(attrs['ref'])
             self.record['nodes'].append(ref)
 
-            nodes2ways = self.client.osm.nodes2ways.find_one({ '_id' : ref })
+            nodes2ways = self.client.osm.backwardsnodes.find_one({ '_id' : ref })
             if not nodes2ways:
                 nodes2ways = { '_id' : ref, 'ways' : [] }
+            if not nodes2ways['ways']:
+                nodes2ways['ways'] = []
             nodes2ways['ways'].append(self.record['id'])
-            self.client.osm.nodes2ways.save(nodes2ways)
+            self.client.osm.backwardsnodes.save(nodes2ways)
         elif name == 'member':
             ref = long(attrs['ref'])
             member = {'type': attrs['type'],
@@ -63,17 +65,21 @@ class OsmHandler(ContentHandler):
             self.record['members'].append(member)
             
             if attrs['type'] == 'way':
-                ways2relations = self.client.osm.ways2relations.find_one({ '_id' : ref})
+                ways2relations = self.client.osm.backwardsways.find_one({ '_id' : ref})
                 if not ways2relations:
                     ways2relations = { '_id' : ref, 'relations' : [] }
+                if not ways2relations['relations']:
+                    ways2relations['relations'] = []
                 ways2relations['relations'].append(ref)
-                self.client.osm.ways2relations.save(ways2relations)
+                self.client.osm.backwardsways.save(ways2relations)
             elif attrs['type'] == 'node':
-                nodes2relations = self.client.osm.nodes2relations.find_one({ '_id' : ref})
+                nodes2relations = self.client.osm.backwardsnodes.find_one({ '_id' : ref})
                 if not nodes2relations:
                     nodes2relations = { '_id' : ref, 'relations' : [] }
+                if not nodes2relations['relations']:
+                    nodes2relations['relations'] = []
                 nodes2relations['relations'].append(ref)
-                self.client.osm.nodes2relations.save(nodes2relations)
+                self.client.osm.backwardsnodes.save(nodes2relations)
         
     def endElement(self, name):
         if name == 'node':
