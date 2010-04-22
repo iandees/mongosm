@@ -56,10 +56,22 @@ class OsmHandler(ContentHandler):
             nodes2ways['ways'].append(self.record['id'])
             self.client.osm.nodes2ways.save(nodes2ways)
         elif name == 'member':
+            ref = long(attrs['ref'])
             member = {'type': attrs['type'],
-                      'ref':  attrs['ref'],
+                      'ref':  ref,
                       'role': attrs['role']}
             self.record['members'].append(member)
+            
+            if attrs['type'] == 'way':
+                ways2relations = self.client.osm.ways2relations.find_one({ '_id' : ref})
+                if not ways2relations:
+                    ways2relations = { '_id' : ref, 'relations' : [] }
+                ways2relations['relations'].append(ref)
+            elif attrs['type'] == 'node':
+                nodes2relations = self.client.osm.nodes2relations.find_one({ '_id' : ref})
+                if not nodes2relations:
+                    nodes2relations = { '_id' : ref, 'relations' : [] }
+                nodes2relations['relations'].append(ref)
         
     def endElement(self, name):
         if name == 'node':
