@@ -92,6 +92,14 @@ class OsmXmlOutput:
             for ref in way['nodes']:
                 print "<nd ref='%d'/>" % (ref)
             print "</way>"
+
+        for relation in data['relations']:
+            print "<relation id='%d' user='%s'>" % (relation['id'], relation['user'],)
+            for tag in relation['tags'].items():
+                print "<tag k='%s' v='%s'/>" % (tag[0], tag[1])
+            for member in relation['members']:
+                print "<member type='%s' ref='%d' role='%s'/>" % (type, ref, role,)
+            print "</relation>"
             
         print "</osm>"
 
