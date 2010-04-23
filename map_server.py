@@ -86,7 +86,6 @@ class OsmApi:
         return relations
 
     def getRelationIdsUsingWayId(self, id):
-        print id
         cursor = self.client.osm.backwardsways.find_one({'_id' : id })
         if cursor and cursor['relations']:
             return cursor['relations']
@@ -99,24 +98,35 @@ class OsmApi:
         nodes.extend(self.getNodesFromWays(ways))
         relations = self.getRelationsFromWays(ways)
         
-        doc = {'nodes': nodes,
+        doc = {'bounds': {'minlat': bbox[0][0],
+                          'minlon': bbox[0][1],
+                          'maxlat': bbox[1][0],
+                          'maxlon': bbox[1][1]},
+               'nodes': nodes,
                'ways': ways,
                'relations': relations}
 
         return doc
 
 class OsmXmlOutput:
+    def defaultAttrs(self, item):
+        return "id='%s' version='%s' user='%s'" % (item['id'], item['version'], item['user'])
+
     def write(self, data):
-        print "<osm>"
+        print "<osm generator='mongosm 0.1' version='0.6'>"
+        print "<bounds minlat='%f' minlon='%f' maxlat='%f' maxlon='%f'/>" % (data['bounds']['minlat'],
+                                                                             data['bounds']['minlon'],
+                                                                             data['bounds']['maxlat'],
+                                                                             data['bounds']['maxlon'])
 
         for node in data['nodes']:
-            print "<node id='%d' user='%s'>" % (node['id'], node['user'],)
+            print "<node lat='%s' lon='%s' %s>" % (node['loc']['lat'], node['loc']['lon'], self.defaultAttrs(node))
             for tag in node['tags'].items():
                 print "<tag k='%s' v='%s'/>" % (tag[0], tag[1])
             print "</node>"
 
         for way in data['ways']:
-            print "<way id='%d' user='%s'>" % (way['id'], way['user'],)
+            print "<way %s>" % (self.defaultAttrs(way),)
             for tag in way['tags'].items():
                 print "<tag k='%s' v='%s'/>" % (tag[0], tag[1])
             for ref in way['nodes']:
@@ -124,7 +134,7 @@ class OsmXmlOutput:
             print "</way>"
 
         for relation in data['relations']:
-            print "<relation id='%d' user='%s'>" % (relation['id'], relation['user'],)
+            print "<relation %s>" % (self.defaultAttrs(relation),)
             for tag in relation['tags'].items():
                 print "<tag k='%s' v='%s'/>" % (tag[0], tag[1])
             for member in relation['members']:
@@ -135,7 +145,7 @@ class OsmXmlOutput:
 
 
 if __name__ == '__main__':
-    bbox = [[44.982709,-93.248777],[44.985965,-93.244985]]
+    bbox = [[44.96754,-93.30507],[44.97249,-93.29653]]
     api = OsmApi()
     data = api.getBbox(bbox)
     

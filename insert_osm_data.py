@@ -23,6 +23,10 @@ class OsmHandler(ContentHandler):
             self.record['user'] = attrs['user']
         if attrs.has_key('uid'):
             self.record['uid'] = long(attrs['uid'])
+        if attrs.has_key('version'):
+            self.record['version'] = int(attrs['version'])
+        if attrs.has_key('changeset'):
+            self.record['changeset'] = long(attrs['changeset'])
 
     def isoToTimestamp(self, isotime):
         t = datetime.strptime(isotime, "%Y-%m-%dT%H:%M:%SZ")
@@ -70,7 +74,7 @@ class OsmHandler(ContentHandler):
                     ways2relations = { '_id' : ref, 'relations' : [] }
                 if not ways2relations['relations']:
                     ways2relations['relations'] = []
-                ways2relations['relations'].append(ref)
+                ways2relations['relations'].append(self.record['id'])
                 self.client.osm.backwardsways.save(ways2relations)
             elif attrs['type'] == 'node':
                 nodes2relations = self.client.osm.backwardsnodes.find_one({ '_id' : ref})
@@ -78,7 +82,7 @@ class OsmHandler(ContentHandler):
                     nodes2relations = { '_id' : ref, 'relations' : [] }
                 if not nodes2relations['relations']:
                     nodes2relations['relations'] = []
-                nodes2relations['relations'].append(ref)
+                nodes2relations['relations'].append(self.record['id'])
                 self.client.osm.backwardsnodes.save(nodes2relations)
         
     def endElement(self, name):
