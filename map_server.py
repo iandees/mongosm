@@ -77,7 +77,7 @@ class OsmApi:
         relations = []
 
         for relationId in relationIds:
-            relation = self.client.osm.relation.find_one({'id' : relationId})
+            relation = self.client.osm.relations.find_one({'id' : relationId})
             if relation:
                 relations.append(relation)
             else:
@@ -93,10 +93,20 @@ class OsmApi:
             return []
 
     def getBbox(self, bbox):
+        print "<!-- Start -->"
         nodes = self.getNodesInBounds(bbox)
+        print "<!-- Get nodes -->"
         ways = self.getWaysFromNodes(nodes)
-        nodes.extend(self.getNodesFromWays(ways))
+        print "<!-- Get ways -->"
+
+        wayNodes = self.getNodesFromWays(ways)
+        for n in wayNodes:
+            if n['id'] not in nodes:
+                nodes.append(n)
+        print "<!-- Get nodes from ways -->"
+
         relations = self.getRelationsFromWays(ways)
+        print "<!-- Get relations -->"
         
         doc = {'bounds': {'minlat': bbox[0][0],
                           'minlon': bbox[0][1],
@@ -138,7 +148,7 @@ class OsmXmlOutput:
             for tag in relation['tags'].items():
                 print "<tag k='%s' v='%s'/>" % (tag[0], tag[1])
             for member in relation['members']:
-                print "<member type='%s' ref='%d' role='%s'/>" % (type, ref, role,)
+                print "<member type='%s' ref='%d' role='%s'/>" % (member['type'], member['ref'], member['role'],)
             print "</relation>"
             
         print "</osm>"
