@@ -121,10 +121,14 @@ class OsmApi:
         return doc
 
 class OsmXmlOutput:
+    def addNotNullAttr(self, mappable, mappableElement, name):
+        if name in mappable:
+            mappableElement.setAttribute(name, str(mappable[name]))
+
     def defaultAttrs(self, mappableElement, mappable):
-        mappableElement.setAttribute("id", str(mappable['id']))
-        mappableElement.setAttribute("version", str(mappable['version']))
-        mappableElement.setAttribute("user", mappable['user'])
+        self.addNotNullAttr(mappable, mappableElement, "id")
+        self.addNotNullAttr(mappable, mappableElement, "version")
+        self.addNotNullAttr(mappable, mappableElement, "user")
 
     def tagNodes(self, doc, mappableElement, mappable):
         for tag in mappable['tags'].items():
@@ -179,12 +183,14 @@ class OsmXmlOutput:
                 relationElem.appendChild(memberElem)
             root.appendChild(relationElem)
 
-        print doc.toprettyxml(indent="  ")
+        print doc.toprettyxml(indent="  ", encoding="UTF-8")
 
 if __name__ == '__main__':
-    bbox = [[44.9699,-93.2789],[44.9829,-93.2612]]
+    import time, sys
+    bbox = [[46.784,-92.3746],[46.8197,-92.3159]]
     api = OsmApi()
     data = api.getBbox(bbox)
     
     outputter = OsmXmlOutput()
     outputter.write(data)
+    sys.stderr.write("<!-- XML output %s -->\n" % time.time())
