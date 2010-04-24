@@ -57,8 +57,8 @@ class OsmApi:
         return ways
 
     def getWayIdsUsingNodeId(self, id):
-        cursor = self.client.osm.backwardsnodes.find_one({'_id' : id })
-        if cursor and cursor['ways']:
+        cursor = self.client.osm.nodes.find_one({'id' : id })
+        if cursor and 'ways' in cursor:
             return cursor['ways']
         else:
             return []
@@ -85,8 +85,8 @@ class OsmApi:
         return relations
 
     def getRelationIdsUsingWayId(self, id):
-        cursor = self.client.osm.backwardsways.find_one({'_id' : id })
-        if cursor and cursor['relations']:
+        cursor = self.client.osm.ways.find_one({'id' : id })
+        if cursor and 'relations' in cursor:
             return cursor['relations']
         else:
             return []
@@ -160,5 +160,5 @@ if __name__ == '__main__':
     api = OsmApi()
     data = api.getBbox(bbox)
     
-    #outputter = OsmXmlOutput()
-    #outputter.write(data)
+    outputter = OsmXmlOutput()
+    outputter.write(data)
