@@ -1,5 +1,6 @@
 import pymongo
 from pymongo import Connection
+from xml.sax.saxutils import escape
 
 class OsmApi:
     def __init__(self):
@@ -92,22 +93,22 @@ class OsmApi:
             return []
 
     def getBbox(self, bbox):
-        import time
+        import time, sys
 
-        print "<!-- Start %s -->" % time.time()
+        sys.stderr.write("<!-- Start %s -->\n" % time.time())
         nodes = self.getNodesInBounds(bbox)
-        print "<!-- Get nodes %s -->" % time.time()
+        sys.stderr.write("<!-- Get nodes %s -->\n" % time.time())
         ways = self.getWaysFromNodes(nodes)
-        print "<!-- Get ways %s -->" % time.time()
+        sys.stderr.write("<!-- Get ways %s -->\n" % time.time())
 
         wayNodes = self.getNodesFromWays(ways)
         for n in wayNodes:
             if n['id'] not in nodes:
                 nodes.append(n)
-        print "<!-- Get nodes from ways %s -->" % time.time()
+        sys.stderr.write("<!-- Get nodes from ways %s -->\n" % time.time())
 
         relations = self.getRelationsFromWays(ways)
-        print "<!-- Get relations %s -->" % time.time()
+        sys.stderr.write("<!-- Get relations %s -->\n" % time.time())
         
         doc = {'bounds': {'minlat': bbox[0][0],
                           'minlon': bbox[0][1],
@@ -120,43 +121,68 @@ class OsmApi:
         return doc
 
 class OsmXmlOutput:
-    def defaultAttrs(self, item):
-        return "id='%s' version='%s' user='%s'" % (item['id'], item['version'], item['user'])
+    def defaultAttrs(self, mappableElement, mappable):
+        mappableElement.setAttribute("id", str(mappable['id']))
+        mappableElement.setAttribute("version", str(mappable['version']))
+        mappableElement.setAttribute("user", mappable['user'])
+
+    def tagNodes(self, doc, mappableElement, mappable):
+        for tag in mappable['tags'].items():
+            tagElement = doc.createElement("tag")
+            tagElement.setAttribute("k", tag[0])
+            tagElement.setAttribute("v", tag[1])
+            mappableElement.appendChild(tagElement)
 
     def write(self, data):
-        print "<osm generator='mongosm 0.1' version='0.6'>"
-        print "<bounds minlat='%f' minlon='%f' maxlat='%f' maxlon='%f'/>" % (data['bounds']['minlat'],
-                                                                             data['bounds']['minlon'],
-                                                                             data['bounds']['maxlat'],
-                                                                             data['bounds']['maxlon'])
+        from xml.dom.minidom import Document
+
+        doc = Document()
+        root = doc.createElement("osm")
+        root.setAttribute("generator", "mongosm 0.1")
+        root.setAttribute("version", "0.6")
+        doc.appendChild(root)
+
+        bounds = doc.createElement("bounds")
+        bounds.setAttribute("minlat", str(data['bounds']['minlat']))
+        bounds.setAttribute("minlon", str(data['bounds']['minlon']))
+        bounds.setAttribute("maxlat", str(data['bounds']['maxlat']))
+        bounds.setAttribute("maxlon", str(data['bounds']['maxlon']))
+        root.appendChild(bounds)
 
         for node in data['nodes']:
-            print "<node lat='%s' lon='%s' %s>" % (node['loc']['lat'], node['loc']['lon'], self.defaultAttrs(node))
-            for tag in node['tags'].items():
-                print "<tag k='%s' v='%s'/>" % (tag[0], tag[1])
-            print "</node>"
+            nodeElem = doc.createElement("node")
+            nodeElem.setAttribute("lat", str(node['loc']['lat']))
+            nodeElem.setAttribute("lon", str(node['loc']['lon']))
+            self.defaultAttrs(nodeElem, node)
+            self.tagNodes(doc, nodeElem, node)
+            root.appendChild(nodeElem)
 
         for way in data['ways']:
-            print "<way %s>" % (self.defaultAttrs(way),)
-            for tag in way['tags'].items():
-                print "<tag k='%s' v='%s'/>" % (tag[0], tag[1])
+            wayElem = doc.createElement("way")
+            self.defaultAttrs(wayElem, way)
+            self.tagNodes(doc, wayElem, way)
             for ref in way['nodes']:
-                print "<nd ref='%d'/>" % (ref)
-            print "</way>"
+                refElement = doc.createElement("nd")
+                refElement.setAttribute("ref", str(ref))
+                wayElem.appendChild(refElement)
+            root.appendChild(wayElem)
 
         for relation in data['relations']:
-            print "<relation %s>" % (self.defaultAttrs(relation),)
-            for tag in relation['tags'].items():
-                print "<tag k='%s' v='%s'/>" % (tag[0], tag[1])
+            relationElem = doc.createElement("relation")
+            self.defaultAttrs(relationElem, relation)
+            self.tagNodes(doc, relationElem, relation)
             for member in relation['members']:
-                print "<member type='%s' ref='%d' role='%s'/>" % (member['type'], member['ref'], member['role'],)
-            print "</relation>"
-            
-        print "</osm>"
+                memberElem = doc.createElement("member")
+                memberElem.setAttribute("type", member['type'])
+                memberElem.setAttribute("ref", str(member['ref']))
+                memberElem.setAttribute("role", member['role'])
+                relationElem.appendChild(memberElem)
+            root.appendChild(relationElem)
 
+        print doc.toprettyxml(indent="  ")
 
 if __name__ == '__main__':
-    bbox = [[44.97357,-93.28899],[44.97638,-93.28581]]
+    bbox = [[44.9699,-93.2789],[44.9829,-93.2612]]
     api = OsmApi()
     data = api.getBbox(bbox)
     
