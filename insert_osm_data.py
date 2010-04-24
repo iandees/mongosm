@@ -14,6 +14,8 @@ class OsmHandler(ContentHandler):
         self.client = client
         self.client.osm.nodes.ensure_index([('loc', pymongo.GEO2D), ('id', pymongo.ASCENDING)])
         self.client.osm.nodes.ensure_index([('id', pymongo.ASCENDING), ('version', pymongo.ASCENDING)])
+        self.client.osm.ways.ensure_index([('id', pymongo.ASCENDING), ('version', pymongo.ASCENDING)])
+        self.client.osm.relations.ensure_index([('id', pymongo.ASCENDING), ('version', pymongo.ASCENDING)])
         self.shelf = shelf
 
     def fillDefault(self, attrs):
@@ -56,10 +58,13 @@ class OsmHandler(ContentHandler):
             self.record['nodes'].append(ref)
 
             nodes2ways = self.client.osm.nodes.find_one({ 'id' : ref })
-            if 'ways' not in nodes2ways:
-                nodes2ways['ways'] = []
-            nodes2ways['ways'].append(self.record['id'])
-            self.client.osm.nodes.save(nodes2ways)
+            if nodes2ways:
+                if 'ways' not in nodes2ways:
+                    nodes2ways['ways'] = []
+                nodes2ways['ways'].append(self.record['id'])
+                self.client.osm.nodes.save(nodes2ways)
+            else:
+                print "Node %d ref'd by way %d not in file." % (ref, self.record['id'])
         elif name == 'member':
             ref = long(attrs['ref'])
             member = {'type': attrs['type'],
