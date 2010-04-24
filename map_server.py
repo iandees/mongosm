@@ -36,8 +36,7 @@ class OsmApi:
         wayIds = set()
 
         for node in nodes:
-            id = node['id']
-            wayIdsFromNode = self.getWayIdsUsingNodeId(id)
+            wayIdsFromNode = self.getWayIdsUsingNodeId(node['id'])
 
             for wayId in wayIdsFromNode:
                 wayIds.add(wayId)
@@ -93,20 +92,22 @@ class OsmApi:
             return []
 
     def getBbox(self, bbox):
-        print "<!-- Start -->"
+        import time
+
+        print "<!-- Start %s -->" % time.time()
         nodes = self.getNodesInBounds(bbox)
-        print "<!-- Get nodes -->"
+        print "<!-- Get nodes %s -->" % time.time()
         ways = self.getWaysFromNodes(nodes)
-        print "<!-- Get ways -->"
+        print "<!-- Get ways %s -->" % time.time()
 
         wayNodes = self.getNodesFromWays(ways)
         for n in wayNodes:
             if n['id'] not in nodes:
                 nodes.append(n)
-        print "<!-- Get nodes from ways -->"
+        print "<!-- Get nodes from ways %s -->" % time.time()
 
         relations = self.getRelationsFromWays(ways)
-        print "<!-- Get relations -->"
+        print "<!-- Get relations %s -->" % time.time()
         
         doc = {'bounds': {'minlat': bbox[0][0],
                           'minlon': bbox[0][1],
@@ -155,9 +156,9 @@ class OsmXmlOutput:
 
 
 if __name__ == '__main__':
-    bbox = [[44.96754,-93.30507],[44.97249,-93.29653]]
+    bbox = [[44.97357,-93.28899],[44.97638,-93.28581]]
     api = OsmApi()
     data = api.getBbox(bbox)
     
-    outputter = OsmXmlOutput()
-    outputter.write(data)
+    #outputter = OsmXmlOutput()
+    #outputter.write(data)
