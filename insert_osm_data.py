@@ -13,6 +13,7 @@ class OsmHandler(ContentHandler):
         self.record = {}
         self.client = client
         self.client.osm.nodes.ensure_index([('loc', pymongo.GEO2D), ('id', pymongo.ASCENDING)])
+        self.client.osm.nodes.ensure_index([('id', pymongo.ASCENDING), ('version', pymongo.ASCENDING)])
         self.shelf = shelf
 
     def fillDefault(self, attrs):
@@ -54,13 +55,11 @@ class OsmHandler(ContentHandler):
             ref = long(attrs['ref'])
             self.record['nodes'].append(ref)
 
-            nodes2ways = self.client.osm.backwardsnodes.find_one({ '_id' : ref })
-            if not nodes2ways:
-                nodes2ways = { '_id' : ref, 'ways' : [] }
-            if not nodes2ways['ways']:
+            nodes2ways = self.client.osm.nodes.find_one({ 'id' : ref })
+            if 'ways' not in nodes2ways:
                 nodes2ways['ways'] = []
             nodes2ways['ways'].append(self.record['id'])
-            self.client.osm.backwardsnodes.save(nodes2ways)
+            self.client.osm.nodes.save(nodes2ways)
         elif name == 'member':
             ref = long(attrs['ref'])
             member = {'type': attrs['type'],
@@ -69,21 +68,19 @@ class OsmHandler(ContentHandler):
             self.record['members'].append(member)
             
             if attrs['type'] == 'way':
-                ways2relations = self.client.osm.backwardsways.find_one({ '_id' : ref})
-                if not ways2relations:
-                    ways2relations = { '_id' : ref, 'relations' : [] }
-                if not ways2relations['relations']:
-                    ways2relations['relations'] = []
-                ways2relations['relations'].append(self.record['id'])
-                self.client.osm.backwardsways.save(ways2relations)
+                ways2relations = self.client.osm.ways.find_one({ 'id' : ref})
+                if ways2relations:
+                    if 'relations' not in ways2relations:
+                        ways2relations['relations'] = []
+                    ways2relations['relations'].append(self.record['id'])
+                    self.client.osm.ways.save(ways2relations)
             elif attrs['type'] == 'node':
-                nodes2relations = self.client.osm.backwardsnodes.find_one({ '_id' : ref})
-                if not nodes2relations:
-                    nodes2relations = { '_id' : ref, 'relations' : [] }
-                if not nodes2relations['relations']:
-                    nodes2relations['relations'] = []
-                nodes2relations['relations'].append(self.record['id'])
-                self.client.osm.backwardsnodes.save(nodes2relations)
+                nodes2relations = self.client.osm.nodes.find_one({ 'id' : ref})
+                if nodes2relations:
+                    if 'relations' not in nodes2relations:
+                        nodes2relations['relations'] = []
+                    nodes2relations['relations'].append(self.record['id'])
+                    self.client.osm.nodes.save(nodes2relations)
         
     def endElement(self, name):
         if name == 'node':
