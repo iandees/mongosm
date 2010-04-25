@@ -58,7 +58,7 @@ class OsmApi:
         return ways
 
     def getWayIdsUsingNodeId(self, id):
-        cursor = self.client.osm.nodes.find_one({'id' : id })
+        cursor = self.client.osm.nodes.find_one({'id' : id }, ['ways'])
         if cursor and 'ways' in cursor:
             return cursor['ways']
         else:
@@ -86,11 +86,21 @@ class OsmApi:
         return relations
 
     def getRelationIdsUsingWayId(self, id):
-        cursor = self.client.osm.ways.find_one({'id' : id })
+        cursor = self.client.osm.ways.find_one({'id' : id }, ['relations'])
         if cursor and 'relations' in cursor:
             return cursor['relations']
         else:
             return []
+
+    def getNodeById(self, id):
+        cursor = self.client.osm.nodes.find_one({'id' : id })
+        if cursor:
+            return {'nodes': cursor}
+
+    def getWayById(self, id):
+        cursor = self.client.osm.ways.find_one({'id' : id })
+        if cursor:
+            return {'ways': cursor}
 
     def getBbox(self, bbox):
         import time, sys
@@ -146,42 +156,46 @@ class OsmXmlOutput:
         root.setAttribute("version", "0.6")
         doc.appendChild(root)
 
-        bounds = doc.createElement("bounds")
-        bounds.setAttribute("minlat", str(data['bounds']['minlat']))
-        bounds.setAttribute("minlon", str(data['bounds']['minlon']))
-        bounds.setAttribute("maxlat", str(data['bounds']['maxlat']))
-        bounds.setAttribute("maxlon", str(data['bounds']['maxlon']))
-        root.appendChild(bounds)
+        if 'bounds' in data:
+            bounds = doc.createElement("bounds")
+            bounds.setAttribute("minlat", str(data['bounds']['minlat']))
+            bounds.setAttribute("minlon", str(data['bounds']['minlon']))
+            bounds.setAttribute("maxlat", str(data['bounds']['maxlat']))
+            bounds.setAttribute("maxlon", str(data['bounds']['maxlon']))
+            root.appendChild(bounds)
 
-        for node in data['nodes']:
-            nodeElem = doc.createElement("node")
-            nodeElem.setAttribute("lat", str(node['loc']['lat']))
-            nodeElem.setAttribute("lon", str(node['loc']['lon']))
-            self.defaultAttrs(nodeElem, node)
-            self.tagNodes(doc, nodeElem, node)
-            root.appendChild(nodeElem)
+        if 'nodes' in data:
+            for node in data['nodes']:
+                nodeElem = doc.createElement("node")
+                nodeElem.setAttribute("lat", str(node['loc']['lat']))
+                nodeElem.setAttribute("lon", str(node['loc']['lon']))
+                self.defaultAttrs(nodeElem, node)
+                self.tagNodes(doc, nodeElem, node)
+                root.appendChild(nodeElem)
 
-        for way in data['ways']:
-            wayElem = doc.createElement("way")
-            self.defaultAttrs(wayElem, way)
-            self.tagNodes(doc, wayElem, way)
-            for ref in way['nodes']:
-                refElement = doc.createElement("nd")
-                refElement.setAttribute("ref", str(ref))
-                wayElem.appendChild(refElement)
-            root.appendChild(wayElem)
+        if 'ways' in data:
+            for way in data['ways']:
+                wayElem = doc.createElement("way")
+                self.defaultAttrs(wayElem, way)
+                self.tagNodes(doc, wayElem, way)
+                for ref in way['nodes']:
+                    refElement = doc.createElement("nd")
+                    refElement.setAttribute("ref", str(ref))
+                    wayElem.appendChild(refElement)
+                root.appendChild(wayElem)
 
-        for relation in data['relations']:
-            relationElem = doc.createElement("relation")
-            self.defaultAttrs(relationElem, relation)
-            self.tagNodes(doc, relationElem, relation)
-            for member in relation['members']:
-                memberElem = doc.createElement("member")
-                memberElem.setAttribute("type", member['type'])
-                memberElem.setAttribute("ref", str(member['ref']))
-                memberElem.setAttribute("role", member['role'])
-                relationElem.appendChild(memberElem)
-            root.appendChild(relationElem)
+        if 'relations' in data:
+            for relation in data['relations']:
+                relationElem = doc.createElement("relation")
+                self.defaultAttrs(relationElem, relation)
+                self.tagNodes(doc, relationElem, relation)
+                for member in relation['members']:
+                    memberElem = doc.createElement("member")
+                    memberElem.setAttribute("type", member['type'])
+                    memberElem.setAttribute("ref", str(member['ref']))
+                    memberElem.setAttribute("role", member['role'])
+                    relationElem.appendChild(memberElem)
+                root.appendChild(relationElem)
 
         return doc.toprettyxml(indent="  ", encoding="UTF-8")
 
@@ -206,6 +220,20 @@ def mapRequest(request):
 def changesetsRequest(request):
     return HttpResponse("Yup")
 
+def getNode(request, id):
+    api = OsmApi()
+    data = api.getNodeById(id)
+
+    outputter = OsmXmlOutput()
+    return HttpResponse(outputter.toXml(data), content_type='text/xml')
+
+def getWay(request, id):
+    api = OsmApi()
+    data = api.getWayById(id)
+
+    outputter = OsmXmlOutput()
+    return HttpResponse(outputter.toXml(data), content_type='text/xml')
+
 def capabilitiesRequest(request):
     return HttpResponse("""
         <osm version="0.6" generator="mongosm 0.1">
@@ -220,6 +248,8 @@ def bareApi(request):
 
 urlpatterns = patterns('', (r'^api/0.6/map$', mapRequest),
                            (r'^api/0.6/changesets$', changesetsRequest),
+                           (r'^api/0.6/node/(?P<id>\d)$', getNode),
+                           (r'^api/0.6/way/(?P<id>\d)$', getWay),
                            (r'^api/capabilities$', capabilitiesRequest),
                            (r'^api$', bareApi))
 
