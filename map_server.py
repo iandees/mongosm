@@ -137,7 +137,7 @@ class OsmXmlOutput:
             tagElement.setAttribute("v", tag[1])
             mappableElement.appendChild(tagElement)
 
-    def write(self, data):
+    def toXml(self, data):
         from xml.dom.minidom import Document
 
         doc = Document()
@@ -183,9 +183,48 @@ class OsmXmlOutput:
                 relationElem.appendChild(memberElem)
             root.appendChild(relationElem)
 
-        print doc.toprettyxml(indent="  ", encoding="UTF-8")
+        return doc.toprettyxml(indent="  ", encoding="UTF-8")
+
+import os
+from django.conf.urls.defaults import patterns
+from django.http import HttpResponse
+from django.conf.urls.defaults import handler404, handler500, include, patterns, url
+filepath, extension = os.path.splitext(__file__)
+ROOT_URLCONF = os.path.basename(filepath)
+DEBUG=True
+
+def mapRequest(request):
+    (minlon, minlat, maxlon, maxlat) = request.GET['bbox'].split(',')
+    print "%s,%s %s,%s" % (minlat, minlon, maxlat, maxlon)
+    bbox = [[float(minlat), float(minlon)],[float(maxlat), float(maxlon)]]
+    api = OsmApi()
+    data = api.getBbox(bbox)
+
+    outputter = OsmXmlOutput()
+    return HttpResponse(outputter.toXml(data), content_type='text/xml')
+
+def changesetsRequest(request):
+    return HttpResponse("Yup")
+
+def capabilitiesRequest(request):
+    return HttpResponse("""
+        <osm version="0.6" generator="mongosm 0.1">
+            <api>
+                <version minimum="0.6" maximum="0.6"/>
+                <area maximum="0.5"/>
+            </api>
+        </osm>""")
+
+def bareApi(request):
+    return HttpResponse("Yup")
+
+urlpatterns = patterns('', (r'^api/0.6/map$', mapRequest),
+                           (r'^api/0.6/changesets$', changesetsRequest),
+                           (r'^api/capabilities$', capabilitiesRequest),
+                           (r'^api$', bareApi))
 
 if __name__ == '__main__':
+    """
     import time, sys
     bbox = [[46.784,-92.3746],[46.8197,-92.3159]]
     api = OsmApi()
@@ -194,3 +233,4 @@ if __name__ == '__main__':
     outputter = OsmXmlOutput()
     outputter.write(data)
     sys.stderr.write("<!-- XML output %s -->\n" % time.time())
+    """
