@@ -95,12 +95,25 @@ class OsmApi:
     def getNodeById(self, id):
         cursor = self.client.osm.nodes.find_one({'id' : id })
         if cursor:
-            return {'nodes': cursor}
+            return {'nodes': [cursor]}
+        else:
+            return {}
 
     def getWayById(self, id):
+        print id
         cursor = self.client.osm.ways.find_one({'id' : id })
         if cursor:
-            return {'ways': cursor}
+            print cursor
+            return {'ways': [cursor]}
+        else:
+            return {}
+
+    def getRelationById(self, id):
+        cursor = self.client.osm.relations.ways.find_one({'id' : id })
+        if cursor:
+            return {'relations': [cursor]}
+        else:
+            return {}
 
     def getBbox(self, bbox):
         import time, sys
@@ -222,14 +235,21 @@ def changesetsRequest(request):
 
 def getNode(request, id):
     api = OsmApi()
-    data = api.getNodeById(id)
+    data = api.getNodeById(long(id))
 
     outputter = OsmXmlOutput()
     return HttpResponse(outputter.toXml(data), content_type='text/xml')
 
 def getWay(request, id):
     api = OsmApi()
-    data = api.getWayById(id)
+    data = api.getWayById(long(id))
+
+    outputter = OsmXmlOutput()
+    return HttpResponse(outputter.toXml(data), content_type='text/xml')
+
+def getRelation(request, id):
+    api = OsmApi()
+    data = api.getRelationById(long(id))
 
     outputter = OsmXmlOutput()
     return HttpResponse(outputter.toXml(data), content_type='text/xml')
@@ -248,8 +268,9 @@ def bareApi(request):
 
 urlpatterns = patterns('', (r'^api/0.6/map$', mapRequest),
                            (r'^api/0.6/changesets$', changesetsRequest),
-                           (r'^api/0.6/node/(?P<id>\d)$', getNode),
-                           (r'^api/0.6/way/(?P<id>\d)$', getWay),
+                           (r'^api/0.6/node/(?P<id>\d+)$', getNode),
+                           (r'^api/0.6/way/(?P<id>\d+)$', getWay),
+                           (r'^api/0.6/relation/(?P<id>\d+)$', getRelation),
                            (r'^api/capabilities$', capabilitiesRequest),
                            (r'^api$', bareApi))
 
