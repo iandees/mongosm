@@ -1,6 +1,8 @@
+"""This program parses an OSM XML file and inserts the data in a
+MongoDB database"""
+
 import sys
 import os
-import shelve
 import time
 import pymongo
 from datetime import datetime
@@ -9,16 +11,20 @@ from xml.sax.handler import ContentHandler
 from pymongo import Connection
 
 class OsmHandler(ContentHandler):
-    def __init__(self, client, shelf):
+    """Base class for parsing OSM XML data"""
+    def __init__(self, client):
         self.record = {}
         self.client = client
-        self.client.osm.nodes.ensure_index([('loc', pymongo.GEO2D), ('id', pymongo.ASCENDING)])
-        self.client.osm.nodes.ensure_index([('id', pymongo.ASCENDING), ('version', pymongo.ASCENDING)])
-        self.client.osm.ways.ensure_index([('id', pymongo.ASCENDING), ('version', pymongo.ASCENDING)])
-        self.client.osm.relations.ensure_index([('id', pymongo.ASCENDING), ('version', pymongo.ASCENDING)])
-        self.shelf = shelf
-
+        self.client.osm.nodes.ensure_index([('loc', pymongo.GEO2D),
+                                            ('id', pymongo.ASCENDING)])
+        self.client.osm.nodes.ensure_index([('id', pymongo.ASCENDING),
+                                            ('version', pymongo.ASCENDING)])
+        self.client.osm.ways.ensure_index([('id', pymongo.ASCENDING),
+                                           ('version', pymongo.ASCENDING)])
+        self.client.osm.relations.ensure_index([('id', pymongo.ASCENDING),
+                                                ('version', pymongo.ASCENDING)])
     def fillDefault(self, attrs):
+        """Fill in default record values"""
         self.record['id'] = long(attrs['id'])
         self.record['timestamp'] = self.isoToTimestamp(attrs['timestamp'])
         self.record['tags'] = {}
@@ -32,14 +38,16 @@ class OsmHandler(ContentHandler):
             self.record['changeset'] = long(attrs['changeset'])
 
     def isoToTimestamp(self, isotime):
+        """Parse a date and return a time tuple"""
         t = datetime.strptime(isotime, "%Y-%m-%dT%H:%M:%SZ")
         return time.mktime(t.timetuple())
 
     def startElement(self, name, attrs):
+        """Parse the XML element at the start"""
         if name == 'node':
             self.fillDefault(attrs)
-
-            self.record['loc'] = {'lat': float(attrs['lat']), 'lon': float(attrs['lon'])}
+            self.record['loc'] = {'lat': float(attrs['lat']),
+                                  'lon': float(attrs['lon'])}
         elif name == 'changeset':
             self.fillDefault(attrs)
         elif name == 'tag':
@@ -64,7 +72,8 @@ class OsmHandler(ContentHandler):
                 nodes2ways['ways'].append(self.record['id'])
                 self.client.osm.nodes.save(nodes2ways)
             else:
-                print "Node %d ref'd by way %d not in file." % (ref, self.record['id'])
+                print "Node %d ref'd by way %d not in file." % \
+                    (ref, self.record['id'])
         elif name == 'member':
             ref = long(attrs['ref'])
             member = {'type': attrs['type'],
@@ -88,40 +97,28 @@ class OsmHandler(ContentHandler):
                     self.client.osm.nodes.save(nodes2relations)
         
     def endElement(self, name):
+        """Finish parsing an element
+        (only really used with nodes, ways and relations)"""
         if name == 'node':
-            #if str("node_%s" % (self.record['id'])) in self.shelf:
-            #    print "Skipping node %s." % (self.record['id'])
-            #else:
             self.client.osm.nodes.save(self.record)
             self.record = {}
-                #self.shelf[str("node_%s" % self.record['id'])] = self.record
-            #print "Sent node %s." % (self.record)
         elif name == 'way':
-            #if str("way_%s" % (self.record['id'])) in self.shelf:
-            #    print "Skipping way %s." % (self.record['id'])
-            #else:
-                self.client.osm.ways.save(self.record)
-                self.record = {}
-                #self.shelf[str("way_%s" % self.record['id'])] = self.record
-                #print "Sent way %s." % (self.record)
+            self.client.osm.ways.save(self.record)
+            self.record = {}
         elif name == 'relation':
             self.client.osm.relations.save(self.record)
             self.record = {}
 
 if __name__ == "__main__":
-
     filename = sys.argv[1]
 
     if not os.path.exists(filename):
         print "Path %s doesn't exist." % (filename)
         sys.exit(-1)
 
-    #shelf = shelve.open("%s.db" % (filename))
-    shelf = ""
-
     client = Connection()
     parser = make_parser()
-    handler = OsmHandler(client, shelf)
+    handler = OsmHandler(client)
     parser.setContentHandler(handler)
     parser.parse(open(filename))
     client.disconnect()
