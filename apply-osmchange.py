@@ -116,24 +116,6 @@ class OsmChangeHandler(ContentHandler):
                       'role': attrs['role']}
             self.record['members'].append(member)
     
-    def create(self):
-        """Takes the current items in the record queue and creates
-        them in the database"""
-        pass
-    def modify(self):
-        """Takes the current items in the record queue and modifies
-        them in the database.
-      
-        Currently that means to make a new copy of the record,
-        ignoring the old version"""
-        pass
-    def delete(self):
-        """Takes the current items in the record queue and delete them
-        from the database.
-
-        Currently that means to set visable=false, rather than
-        actually delete them."""
-        
     def endElement(self, name):
         """Finish parsing osm objects or actions"""
         if name in ('node', 'way', 'relation'):
