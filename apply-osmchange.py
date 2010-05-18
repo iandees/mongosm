@@ -119,21 +119,18 @@ class OsmChangeHandler(ContentHandler):
     def endElement(self, name):
         """Finish parsing osm objects or actions"""
         if name in ('node', 'way', 'relation'):
+            if self.action == 'delete':
+                self.record['visable'] = False
             getattr(self, name + 's').append(self.record)
             self.record = {}
-        elif name == 'delete':
-            ## This is all doable with list comprehensions but this is
-            ## easier to read
-            for coll in ('nodes', 'ways', 'relations'):
-                for rec in getattr(self, coll):
-                    rec['visable'] = False
         elif name in ('create', 'modify', 'delete'):
             self.action = None
-            for coll in ('nodes', 'ways', 'relations'):
-                if getattr(self, coll):
-                    getattr(self.client.osm, coll).insert(getattr(self, coll))
-                    setattr(self, coll, [])
-            
+
+    def endDocument(self):
+        """Upon document completion, commit the changes"""        
+        for coll in ('nodes', 'ways', 'relations'):
+            if getattr(self, coll):
+                getattr(self.client.osm, coll).insert(getattr(self, coll))
         
 if __name__ == "__main__":
     filename = sys.argv[1]
