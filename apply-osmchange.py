@@ -8,7 +8,7 @@ from xml.sax import make_parser
 from xml.sax.handler import ContentHandler
 from pymongo import Connection
 
-def isototuple(isotime):
+def convert_time(isotime):
     "Returns the time string as a time tuple"
     t = datetime.strptime(isotime, "%Y-%m-%dT%H:%M:%SZ")
     return time.mktime(t.timetuple())
@@ -27,7 +27,7 @@ class OsmChangeHandler(ContentHandler):
     def fillDefault(self, attrs):
         """Fills in default attributes for new records"""
         self.record['id'] = long(attrs['id'])
-        self.record['timestamp'] = isototuple(attrs['timestamp'])
+        self.record['timestamp'] = convert_time(attrs['timestamp'])
         self.record['tags'] = {}
         if attrs.has_key('user'):
             self.record['user'] = attrs['user']
