@@ -8,6 +8,11 @@ from xml.sax import make_parser
 from xml.sax.handler import ContentHandler
 from pymongo import Connection
 
+def isototuple(isotime):
+    "Returns the time string as a time tuple"
+    t = datetime.strptime(isotime, "%Y-%m-%dT%H:%M:%SZ")
+    return time.mktime(t.timetuple())
+
 class OsmChangeHandler(ContentHandler):
     """This ContentHandler works with the OSMChange XML file"""
     def __init__(self, client):
@@ -22,7 +27,7 @@ class OsmChangeHandler(ContentHandler):
     def fillDefault(self, attrs):
         """Fills in default attributes for new records"""
         self.record['id'] = long(attrs['id'])
-        self.record['timestamp'] = self.isoToTimestamp(attrs['timestamp'])
+        self.record['timestamp'] = isototuple(attrs['timestamp'])
         self.record['tags'] = {}
         if attrs.has_key('user'):
             self.record['user'] = attrs['user']
@@ -32,11 +37,6 @@ class OsmChangeHandler(ContentHandler):
             self.record['version'] = int(attrs['version'])
         if attrs.has_key('changeset'):
             self.record['changeset'] = long(attrs['changeset'])
-
-    def isoToTimestamp(self, isotime):
-        """Returns an time tuple from the time string"""
-        t = datetime.strptime(isotime, "%Y-%m-%dT%H:%M:%SZ")
-        return time.mktime(t.timetuple())
 
     def startElement(self, name, attrs):
         """Parse the XML element at the start"""
