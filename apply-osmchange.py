@@ -43,6 +43,7 @@ class OsmChangeHandler(ContentHandler):
         if name in ['create', 'modify', 'delete']:
             self.action = name
         elif name == 'node':
+            self.record = {}
             self.fillDefault(attrs)
             self.record['loc'] = {'lat': float(attrs['lat']),                                  'lon': float(attrs['lon'])}
         elif name == 'tag':
@@ -119,15 +120,24 @@ class OsmChangeHandler(ContentHandler):
     def endElement(self, name):
         """Finish parsing osm objects or actions"""
         if name in ('node', 'way', 'relation'):
+            self.type = name
             if self.action == 'delete':
                 self.record['visable'] = False
             getattr(self, name + 's').append(self.record)
-            self.record = {}
         elif name in ('create', 'modify', 'delete'):
             self.action = None
-
     def endDocument(self):
-        """Upon document completion, commit the changes"""        
+        """Upon document completion, commit the changes"""
+        if not self.record:
+            # We never saw any records.
+            return
+        else:
+            # Check the last record to see if it's in the
+            # database. Complain in the future
+            if getattr(self.client.osm, self.record.type).find_one(
+                {'id': self.record['id'], 'version', self.record['version']}):
+                # In the future, scream
+                pass
         for coll in ('nodes', 'ways', 'relations'):
             if getattr(self, coll):
                 getattr(self.client.osm, coll).insert(getattr(self, coll))
