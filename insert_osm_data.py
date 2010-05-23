@@ -16,13 +16,14 @@ class OsmHandler(ContentHandler):
         self.record = {}
         self.client = client
         self.client.osm.nodes.ensure_index([('loc', pymongo.GEO2D),
-                                            ('id', pymongo.ASCENDING)])
+                                            ('id', pymongo.ASCENDING),
+                                            ('version', pymongo.DESCENDING)])
         self.client.osm.nodes.ensure_index([('id', pymongo.ASCENDING),
-                                            ('version', pymongo.ASCENDING)])
+                                            ('version', pymongo.DESCENDING)])
         self.client.osm.ways.ensure_index([('id', pymongo.ASCENDING),
-                                           ('version', pymongo.ASCENDING)])
+                                           ('version', pymongo.DESCENDING)])
         self.client.osm.relations.ensure_index([('id', pymongo.ASCENDING),
-                                                ('version', pymongo.ASCENDING)])
+                                                ('version', pymongo.DESCENDING)])
     def fillDefault(self, attrs):
         """Fill in default record values"""
         self.record['id'] = long(attrs['id'])
