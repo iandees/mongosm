@@ -13,6 +13,7 @@ from pymongo import Connection
 class OsmHandler(ContentHandler):
     """Base class for parsing OSM XML data"""
     def __init__(self, client):
+        self.records = []
         self.record = {}
         self.client = client
         self.client.osm.nodes.ensure_index([('loc', pymongo.GEO2D),
@@ -101,7 +102,10 @@ class OsmHandler(ContentHandler):
         """Finish parsing an element
         (only really used with nodes, ways and relations)"""
         if name == 'node':
-            self.client.osm.nodes.save(self.record)
+            self.records.append(self.record)
+            if len(self.records) > 3000:
+                self.client.osm.nodes.insert(self.records)
+                self.records = []
             self.record = {}
         elif name == 'way':
             self.client.osm.ways.save(self.record)
