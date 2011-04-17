@@ -15,20 +15,24 @@ class OsmApi:
 
         return nodes
 
+    def getWaysInBounds(self, box):
+        cursor = self.client.osm.ways.find({'loc' : { '$within' : { '$box' : box } } }, { 'loc': 0 })
+        ways = []
+
+        for row in cursor:
+            ways.append(row)
+
+        return ways
+
+
     def getNodesFromWays(self, ways):
-        nodeIds = set()
+        nodeIds = set() 
 
         for way in ways:
             for nodeId in way['nodes']:
                 nodeIds.add(nodeId)
 
-        nodes = []
-        for nodeId in nodeIds:
-            node = self.client.osm.nodes.find_one({'id' : nodeId})
-            if node:
-                nodes.append(node)
-            else:
-                print "Error. couldn't find node id %d." % nodeId
+        nodes = self.client.osm.nodes.find({'id': {'$in': list(nodeIds)} })
 
         return nodes
         
@@ -118,20 +122,34 @@ class OsmApi:
     def getBbox(self, bbox):
         import time, sys
 
-        sys.stderr.write("<!-- Start %s -->\n" % time.time())
+        start = time.time()
+        
         nodes = self.getNodesInBounds(bbox)
-        sys.stderr.write("<!-- Get nodes %s -->\n" % time.time())
-        ways = self.getWaysFromNodes(nodes)
-        sys.stderr.write("<!-- Get ways %s -->\n" % time.time())
+
+        timeA = time.time()
+        sys.stderr.write("<!-- Get nodes in bbox %s -->\n" % (timeA - start))
+
+        ways = self.getWaysInBounds(bbox)
+
+        timeB = time.time()
+        sys.stderr.write("<!-- Get ways in bbox %s -->\n" % (timeB - timeA))
 
         wayNodes = self.getNodesFromWays(ways)
+
+        timeC = time.time()
+        sys.stderr.write("<!-- Get nodes from ways %s -->\n" % (timeC - timeB))
+
         for n in wayNodes:
             if n['id'] not in nodes:
                 nodes.append(n)
-        sys.stderr.write("<!-- Get nodes from ways %s -->\n" % time.time())
+
+        timeD = time.time()
+        sys.stderr.write("<!-- Collate nodes from ways %s -->\n" % (timeD - timeC))
 
         relations = self.getRelationsFromWays(ways)
-        sys.stderr.write("<!-- Get relations %s -->\n" % time.time())
+
+        timeE = time.time()
+        sys.stderr.write("<!-- Get relations %s -->\n" % (timeE - timeD))
         
         doc = {'bounds': {'minlat': bbox[0][0],
                           'minlon': bbox[0][1],
@@ -275,13 +293,15 @@ urlpatterns = patterns('', (r'^api/0.6/map$', mapRequest),
                            (r'^api$', bareApi))
 
 if __name__ == '__main__':
-    """
     import time, sys
-    bbox = [[46.784,-92.3746],[46.8197,-92.3159]]
+    #bbox = [[46.784,-92.3746],[46.8197,-92.3159]]
+    bbox = [[39.2674,-75.5644],[39.2839,-75.5349]]
     api = OsmApi()
     data = api.getBbox(bbox)
     
     outputter = OsmXmlOutput()
-    outputter.write(data)
-    sys.stderr.write("<!-- XML output %s -->\n" % time.time())
-    """
+    start = time.time()
+    outfile = open(sys.argv[1], 'w')
+    outfile.write(outputter.toXml(data))
+    outfile.close()
+    sys.stderr.write("<!-- XML output %s -->\n" % (time.time() - start))

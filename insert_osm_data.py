@@ -16,13 +16,12 @@ class OsmHandler(ContentHandler):
         self.records = []
         self.record = {}
         self.client = client
-        self.client.osm.nodes.ensure_index([('loc', pymongo.GEO2D),
-                                            ('id', pymongo.ASCENDING),
-                                            ('version', pymongo.DESCENDING)])
+        self.client.osm.nodes.ensure_index([('loc', pymongo.GEO2D)])
         self.client.osm.nodes.ensure_index([('id', pymongo.ASCENDING),
                                             ('version', pymongo.DESCENDING)])
         self.client.osm.ways.ensure_index([('id', pymongo.ASCENDING),
                                            ('version', pymongo.DESCENDING)])
+        self.client.osm.ways.ensure_index([('loc', pymongo.GEO2D)])
         self.client.osm.relations.ensure_index([('id', pymongo.ASCENDING),
                                                 ('version', pymongo.DESCENDING)])
     def fillDefault(self, attrs):
@@ -58,6 +57,11 @@ class OsmHandler(ContentHandler):
             k = k.replace('.', ',,')
             self.record['tags'][k] = attrs['v']
         elif name == 'way':
+            # Insert remaining nodes
+            if len(self.records) > 0:
+                self.client.osm.nodes.insert(self.records)
+                self.records = []
+
             self.fillDefault(attrs)
             self.record['nodes'] = []
         elif name == 'relation':
@@ -66,16 +70,6 @@ class OsmHandler(ContentHandler):
         elif name == 'nd':
             ref = long(attrs['ref'])
             self.record['nodes'].append(ref)
-
-            nodes2ways = self.client.osm.nodes.find_one({ 'id' : ref })
-            if nodes2ways:
-                if 'ways' not in nodes2ways:
-                    nodes2ways['ways'] = []
-                nodes2ways['ways'].append(self.record['id'])
-                self.client.osm.nodes.save(nodes2ways)
-            else:
-                print "Node %d ref'd by way %d not in file." % \
-                    (ref, self.record['id'])
         elif name == 'member':
             ref = long(attrs['ref'])
             member = {'type': attrs['type'],
@@ -108,7 +102,12 @@ class OsmHandler(ContentHandler):
                 self.records = []
             self.record = {}
         elif name == 'way':
-            self.client.osm.ways.save(self.record)
+            nodes = self.client.osm.nodes.find({ 'id': { '$in': self.record['nodes'] } }, { 'loc': 1, '_id': 0 })
+            self.record['loc'] = []
+            for node in nodes:
+                self.record['loc'].append(node['loc'])
+
+            self.client.osm.ways.insert(self.record, safe=True)
             self.record = {}
         elif name == 'relation':
             self.client.osm.relations.save(self.record)
