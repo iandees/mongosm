@@ -8,33 +8,37 @@ class OsmApi:
 
     def getNodesInBounds(self, box):
         cursor = self.client.osm.nodes.find({'loc' : { '$within' : { '$box' : box } } })
-        nodes = []
+        nodes = {}
 
         for row in cursor:
-            nodes.append(row)
+            nodes[row['_id']] = row
 
         return nodes
 
     def getWaysInBounds(self, box):
         cursor = self.client.osm.ways.find({'loc' : { '$within' : { '$box' : box } } }, { 'loc': 0 })
-        ways = []
+        ways = {}
 
         for row in cursor:
-            ways.append(row)
+            ways[row['_id']] = row
 
         return ways
 
 
-    def getNodesFromWays(self, ways):
+    def getNodesFromWays(self, ways, existingNodes):
         nodeIds = set() 
 
-        for way in ways:
+        for way in ways.values():
             for nodeId in way['nodes']:
                 nodeIds.add(nodeId)
 
-        nodes = self.client.osm.nodes.find({'id': {'$in': list(nodeIds)} })
+        cursor = self.client.osm.nodes.find({'id': {'$in': list(nodeIds)} })
 
-        return nodes
+        for row in cursor:
+            if row['_id'] not in existingNodes:
+                existingNodes[row['_id']] = row
+
+        return existingNodes
         
 
     def getWaysFromNodes(self, nodes):
@@ -71,7 +75,7 @@ class OsmApi:
     def getRelationsFromWays(self, ways):
         relationIds = set()
         
-        for way in ways:
+        for (wid, way) in ways.items():
             id = way['id']
             relationIdsFromWay = self.getRelationIdsUsingWayId(id)
 
@@ -134,14 +138,11 @@ class OsmApi:
         timeB = time.time()
         sys.stderr.write("<!-- Get ways in bbox %s -->\n" % (timeB - timeA))
 
-        wayNodes = self.getNodesFromWays(ways)
+        wayNodes = self.getNodesFromWays(ways, nodes)
 
         timeC = time.time()
         sys.stderr.write("<!-- Get nodes from ways %s -->\n" % (timeC - timeB))
 
-        for n in wayNodes:
-            if n['id'] not in nodes:
-                nodes.append(n)
 
         timeD = time.time()
         sys.stderr.write("<!-- Collate nodes from ways %s -->\n" % (timeD - timeC))
@@ -155,8 +156,8 @@ class OsmApi:
                           'minlon': bbox[0][1],
                           'maxlat': bbox[1][0],
                           'maxlon': bbox[1][1]},
-               'nodes': nodes,
-               'ways': ways,
+               'nodes': nodes.values(),
+               'ways': ways.values(),
                'relations': relations}
 
         return doc
@@ -164,7 +165,7 @@ class OsmApi:
 class OsmXmlOutput:
     def addNotNullAttr(self, mappable, mappableElement, name):
         if name in mappable:
-            mappableElement.setAttribute(name, str(mappable[name]))
+            mappableElement.setAttribute(escape(name), escape(unicode(mappable[name])))
 
     def defaultAttrs(self, mappableElement, mappable):
         self.addNotNullAttr(mappable, mappableElement, "id")
@@ -177,6 +178,54 @@ class OsmXmlOutput:
             tagElement.setAttribute("k", tag[0])
             tagElement.setAttribute("v", tag[1])
             mappableElement.appendChild(tagElement)
+
+    def iter(self, data):
+        from xml.dom.minidom import Document
+        doc = Document()
+
+        yield '<osm generator="%s" version="%s">\n' % ("mongosm 0.1", "0.6")
+
+        if 'bounds' in data:
+            yield '<bounds minlat="%s" minlon="%s" maxlat="%s" maxlon="%s"/>\n' % (
+                    str(data['bounds']['minlat']),
+                    str(data['bounds']['minlon']),
+                    str(data['bounds']['maxlat']),
+                    str(data['bounds']['maxlon']))
+
+        if 'nodes' in data:
+            for node in data['nodes']:
+                nodeElem = doc.createElement("node")
+                nodeElem.setAttribute("lat", str(node['loc']['lat']))
+                nodeElem.setAttribute("lon", str(node['loc']['lon']))
+                self.defaultAttrs(nodeElem, node)
+                self.tagNodes(doc, nodeElem, node)
+                yield nodeElem.toxml('UTF-8')
+
+        if 'ways' in data:
+            for way in data['ways']:
+                wayElem = doc.createElement("way")
+                self.defaultAttrs(wayElem, way)
+                self.tagNodes(doc, wayElem, way)
+                for ref in way['nodes']:
+                    refElement = doc.createElement("nd")
+                    refElement.setAttribute("ref", str(ref))
+                    wayElem.appendChild(refElement)
+                yield wayElem.toxml('UTF-8')
+
+        if 'relations' in data:
+            for relation in data['relations']:
+                relationElem = doc.createElement("relation")
+                self.defaultAttrs(relationElem, relation)
+                self.tagNodes(doc, relationElem, relation)
+                for member in relation['members']:
+                    memberElem = doc.createElement("member")
+                    memberElem.setAttribute("type", member['type'])
+                    memberElem.setAttribute("ref", str(member['ref']))
+                    memberElem.setAttribute("role", member['role'])
+                    relationElem.appendChild(memberElem)
+                relationElem.toxml('UTF-8')
+
+        yield '</osm>\n'
 
     def toXml(self, data):
         from xml.dom.minidom import Document
@@ -230,72 +279,96 @@ class OsmXmlOutput:
 
         return doc.toprettyxml(indent="  ", encoding="UTF-8")
 
+import time, sys
 import os
-from django.conf.urls.defaults import patterns
-from django.http import HttpResponse
-from django.conf.urls.defaults import handler404, handler500, include, patterns, url
-filepath, extension = os.path.splitext(__file__)
-ROOT_URLCONF = os.path.basename(filepath)
-DEBUG=True
+import urlparse
+from werkzeug.wrappers import Request, Response
+from werkzeug.routing import Map, Rule
+from werkzeug.exceptions import HTTPException, NotFound
 
-def mapRequest(request):
-    (minlon, minlat, maxlon, maxlat) = request.GET['bbox'].split(',')
-    print "%s,%s %s,%s" % (minlat, minlon, maxlat, maxlon)
-    bbox = [[float(minlat), float(minlon)],[float(maxlat), float(maxlon)]]
-    api = OsmApi()
-    data = api.getBbox(bbox)
+class Mongosm(object):
+    def mapRequest(self, request):
+        (minlon, minlat, maxlon, maxlat) = request.args['bbox'].split(',')
+        print "%s,%s %s,%s" % (minlat, minlon, maxlat, maxlon)
+        bbox = [[float(minlat), float(minlon)],[float(maxlat), float(maxlon)]]
+        api = OsmApi()
+        data = api.getBbox(bbox)
 
-    outputter = OsmXmlOutput()
-    return HttpResponse(outputter.toXml(data), content_type='text/xml')
+        outputter = OsmXmlOutput()
 
-def changesetsRequest(request):
-    return HttpResponse("Yup")
+        #start = time.time()
+        #output = outputter.toXml(data)
+        #stop = time.time()
+        #sys.stderr.write("<!-- Serialize to XML %s -->\n" % (stop - start))
+        return Response(outputter.iter(data), content_type='text/xml', direct_passthrough=True)
 
-def getNode(request, id):
-    api = OsmApi()
-    data = api.getNodeById(long(id))
+    def changesetsRequest(self, request):
+        return Response("Yup")
 
-    outputter = OsmXmlOutput()
-    return HttpResponse(outputter.toXml(data), content_type='text/xml')
+    def getNode(self, request, id):
+        api = OsmApi()
+        data = api.getNodeById(long(id))
 
-def getWay(request, id):
-    api = OsmApi()
-    data = api.getWayById(long(id))
+        outputter = OsmXmlOutput()
+        return Response(outputter.toXml(data), content_type='text/xml')
 
-    outputter = OsmXmlOutput()
-    return HttpResponse(outputter.toXml(data), content_type='text/xml')
+    def getWay(self, request, id):
+        api = OsmApi()
+        data = api.getWayById(long(id))
 
-def getRelation(request, id):
-    api = OsmApi()
-    data = api.getRelationById(long(id))
+        outputter = OsmXmlOutput()
+        return Response(outputter.toXml(data), content_type='text/xml')
 
-    outputter = OsmXmlOutput()
-    return HttpResponse(outputter.toXml(data), content_type='text/xml')
+    def getRelation(self, request, id):
+        api = OsmApi()
+        data = api.getRelationById(long(id))
 
-def capabilitiesRequest(request):
-    return HttpResponse("""
-        <osm version="0.6" generator="mongosm 0.1">
-            <api>
-                <version minimum="0.6" maximum="0.6"/>
-                <area maximum="0.5"/>
-            </api>
-        </osm>""")
+        outputter = OsmXmlOutput()
+        return Response(outputter.toXml(data), content_type='text/xml')
 
-def bareApi(request):
-    return HttpResponse("Yup")
+    def capabilitiesRequest(self, request):
+        return Response("""
+            <osm version="0.6" generator="mongosm 0.1">
+                <api>
+                    <version minimum="0.6" maximum="0.6"/>
+                    <area maximum="0.5"/>
+                </api>
+            </osm>""")
 
-urlpatterns = patterns('', (r'^api/0.6/map$', mapRequest),
-                           (r'^api/0.6/changesets$', changesetsRequest),
-                           (r'^api/0.6/node/(?P<id>\d+)$', getNode),
-                           (r'^api/0.6/way/(?P<id>\d+)$', getWay),
-                           (r'^api/0.6/relation/(?P<id>\d+)$', getRelation),
-                           (r'^api/capabilities$', capabilitiesRequest),
-                           (r'^api$', bareApi))
+    def __init__(self):
+        self.url_map = Map([
+            Rule('/api/0.6/map', endpoint='mapRequest'),
+            Rule('/api/0.6/changesets', endpoint='changesetsRequest'),
+            Rule('/api/0.6/node/<id>', endpoint='getNode'),
+            Rule('/api/0.6/way/<id>', endpoint='getWay'),
+            Rule('/api/0.6/relation/<id>', endpoint='getRelation'),
+            Rule('/api/capabilities', endpoint='capabilitiesRequest'),
+        ])
+
+    def dispatch_request(self, request):
+        adapter = self.url_map.bind_to_environ(request.environ)
+        try:
+            endpoint, values = adapter.match()
+            return getattr(self, endpoint)(request, **values)
+        except HTTPException, e:
+            return e
+
+    def wsgi_app(self, environ, start_response):
+        request = Request(environ)
+        response = self.dispatch_request(request)
+        return response(environ, start_response)
+
+    def __call__(self, environ, start_response):
+        return self.wsgi_app(environ, start_response)
 
 if __name__ == '__main__':
+    from werkzeug.serving import run_simple
+    app = Mongosm()
+    run_simple('127.0.0.1', 5000, app, use_debugger=True, use_reloader=True)
+"""
     import time, sys
     #bbox = [[46.784,-92.3746],[46.8197,-92.3159]]
-    bbox = [[39.2674,-75.5644],[39.2839,-75.5349]]
+    bbox = [[44.98233,-93.25264],[44.99191,-93.24167]]
     api = OsmApi()
     data = api.getBbox(bbox)
     
@@ -305,3 +378,4 @@ if __name__ == '__main__':
     outfile.write(outputter.toXml(data))
     outfile.close()
     sys.stderr.write("<!-- XML output %s -->\n" % (time.time() - start))
+"""
