@@ -6,24 +6,63 @@ class OsmApi:
     def __init__(self):
         self.client = Connection()
 
-    def getNodesInBounds(self, box):
-        cursor = self.client.osm.nodes.find({'loc' : { '$within' : { '$box' : box } } })
-        nodes = {}
+    def buildMongoQuery(self, xapiQuery):
+        q = {}
+        for (key, value) in xapiQuery:
+            if key is 'bbox':
+                (minlat, minlon, maxlat, maxlon) = (value[0][0], value[0][1], value[1][0], value[1][1])
 
+                bboxPolygon = [ [minlon,minlat],
+                                [minlon,maxlat],
+                                [maxlon,maxlat],
+                                [maxlon,minlat] ]
+                q['loc'] = { '$within': { '$polygon': bboxPolygon } }
+            elif key is 'tag_match':
+                (left, right) = value
+                q['tags.%s' % (left,)] = right
+
+        return q
+
+    def getNodesInBounds(self, box):
+        return self.getNodesQuery([('bbox', box)])
+    
+    def getNodesQuery(self, query):
+        q = self.buildMongoQuery(query)
+
+        cursor = self.client.osm.nodes.find(q)
+
+        nodes = {}
         for row in cursor:
             nodes[row['_id']] = row
 
         return nodes
 
-    def getWaysInBounds(self, box):
-        cursor = self.client.osm.ways.find({'loc' : { '$within' : { '$box' : box } } }, { 'loc': 0 })
-        ways = {}
+    def getNodes(self, query):
+        nodes = self.getNodesQuery(query)
 
+        return {'nodes': nodes.values()}
+
+    def getWaysInBounds(self, box):
+        return self.getWaysQuery([('bbox', box)])
+
+    def getWaysQuery(self, query):
+        q = self.buildMongoQuery(query)
+
+        cursor = self.client.osm.ways.find(q)
+
+        ways = {}
         for row in cursor:
             ways[row['_id']] = row
 
         return ways
 
+    def getWays(self, query):
+        ways = self.getWaysQuery(query)
+    
+        nodes = {}
+        nodes = self.getNodesFromWays(ways, nodes)
+
+        return {'nodes': nodes.values(), 'ways': ways.values()}
 
     def getNodesFromWays(self, ways, existingNodes):
         nodeIds = set() 
@@ -58,10 +97,6 @@ class OsmApi:
                 ways.append(way)
             else:
                 print "Error. Couldn't find way id %d." % wayId
-
-#        cursor = self.client.osm.ways.find().where("{'id' : { '$all' : [%s] } }" % (','.join([str(y) for y in wayIds])))
-#        for row in cursor:
-#            ways.append(row)
 
         return ways
 
@@ -111,7 +146,6 @@ class OsmApi:
         print id
         cursor = self.client.osm.ways.find_one({'id' : id })
         if cursor:
-            print cursor
             return {'ways': [cursor]}
         else:
             return {}
@@ -122,6 +156,15 @@ class OsmApi:
             return {'relations': [cursor]}
         else:
             return {}
+
+    def getPrimitives(self, query):
+        nodes = self.getNodesQuery(query)
+
+        ways = self.getWaysQuery(query)
+
+        nodes = self.getNodesFromWays(ways, nodes)
+
+        return {'nodes': nodes.values(), 'ways': ways.values()}
 
     def getBbox(self, bbox):
         import time, sys
@@ -199,7 +242,7 @@ class OsmXmlOutput:
                 nodeElem.setAttribute("lon", str(node['loc']['lon']))
                 self.defaultAttrs(nodeElem, node)
                 self.tagNodes(doc, nodeElem, node)
-                yield nodeElem.toxml('UTF-8'), '\n'
+                yield "%s\n" % (nodeElem.toxml('UTF-8'),)
 
         if 'ways' in data:
             for way in data['ways']:
@@ -210,7 +253,7 @@ class OsmXmlOutput:
                     refElement = doc.createElement("nd")
                     refElement.setAttribute("ref", str(ref))
                     wayElem.appendChild(refElement)
-                yield wayElem.toxml('UTF-8'), '\n'
+                yield "%s\n" % (wayElem.toxml('UTF-8'),)
 
         if 'relations' in data:
             for relation in data['relations']:
@@ -223,7 +266,7 @@ class OsmXmlOutput:
                     memberElem.setAttribute("ref", str(member['ref']))
                     memberElem.setAttribute("role", member['role'])
                     relationElem.appendChild(memberElem)
-                relationElem.toxml('UTF-8'), '\n'
+                yield "%s\n" % (relationElem.toxml('UTF-8'),)
 
         yield '</osm>\n'
 
@@ -244,10 +287,6 @@ class Mongosm(object):
 
         outputter = OsmXmlOutput()
 
-        #start = time.time()
-        #output = outputter.toXml(data)
-        #stop = time.time()
-        #sys.stderr.write("<!-- Serialize to XML %s -->\n" % (stop - start))
         return Response(outputter.iter(data), content_type='text/xml', direct_passthrough=True)
 
     def changesetsRequest(self, request):
@@ -258,33 +297,53 @@ class Mongosm(object):
         data = api.getNodeById(long(id))
 
         outputter = OsmXmlOutput()
-        return Response(outputter.toXml(data), content_type='text/xml')
+        return Response(outputter.iter(data), content_type='text/xml')
 
     def getNodeQuery(self, request, xapi_query):
-        return Response("<boop>%s</boop>" % (xapi_query,))
+        api = OsmApi()
+        query = [('tag_match', ('amenity', 'bar'))]
+        data = api.getNodes(query)
+
+        outputter = OsmXmlOutput()
+        return Response(outputter.iter(data), content_type='text/xml')
 
     def getWay(self, request, id):
         api = OsmApi()
         data = api.getWayById(long(id))
 
         outputter = OsmXmlOutput()
-        return Response(outputter.toXml(data), content_type='text/xml')
+        return Response(outputter.iter(data), content_type='text/xml')
 
     def getWayQuery(self, request, xapi_query):
-        return Response("<boop>%s</boop>" % (xapi_query,))
+        api = OsmApi()
+        query = [('tag_match', ('amenity', 'bar'))]
+        data = api.getWays(query)
+
+        outputter = OsmXmlOutput()
+        return Response(outputter.iter(data), content_type='text/xml')
 
     def getRelation(self, request, id):
         api = OsmApi()
         data = api.getRelationById(long(id))
 
         outputter = OsmXmlOutput()
-        return Response(outputter.toXml(data), content_type='text/xml')
+        return Response(outputter.iter(data), content_type='text/xml')
 
     def getRelationQuery(self, request, xapi_query):
-        return Response("<boop>%s</boop>" % (xapi_query,))
+        api = OsmApi()
+        query = xapi_query
+        data = api.getRelations(query)
+
+        outputter = OsmXmlOutput()
+        return Response(outputter.iter(data), content_type='text/xml')
 
     def getPrimitiveQuery(self, request, xapi_query):
-        return Response("<boop>%s</boop>" % (xapi_query,))
+        api = OsmApi()
+        query = [('tag_match', ('amenity', 'bar'))]
+        data = api.getPrimitives(query)
+
+        outputter = OsmXmlOutput()
+        return Response(outputter.iter(data), content_type='text/xml')
 
     def capabilitiesRequest(self, request):
         return Response("""
