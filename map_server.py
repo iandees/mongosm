@@ -227,58 +227,6 @@ class OsmXmlOutput:
 
         yield '</osm>\n'
 
-    def toXml(self, data):
-        from xml.dom.minidom import Document
-
-        doc = Document()
-        root = doc.createElement("osm")
-        root.setAttribute("generator", "mongosm 0.1")
-        root.setAttribute("version", "0.6")
-        doc.appendChild(root)
-
-        if 'bounds' in data:
-            bounds = doc.createElement("bounds")
-            bounds.setAttribute("minlat", str(data['bounds']['minlat']))
-            bounds.setAttribute("minlon", str(data['bounds']['minlon']))
-            bounds.setAttribute("maxlat", str(data['bounds']['maxlat']))
-            bounds.setAttribute("maxlon", str(data['bounds']['maxlon']))
-            root.appendChild(bounds)
-
-        if 'nodes' in data:
-            for node in data['nodes']:
-                nodeElem = doc.createElement("node")
-                nodeElem.setAttribute("lat", str(node['loc']['lat']))
-                nodeElem.setAttribute("lon", str(node['loc']['lon']))
-                self.defaultAttrs(nodeElem, node)
-                self.tagNodes(doc, nodeElem, node)
-                root.appendChild(nodeElem)
-
-        if 'ways' in data:
-            for way in data['ways']:
-                wayElem = doc.createElement("way")
-                self.defaultAttrs(wayElem, way)
-                self.tagNodes(doc, wayElem, way)
-                for ref in way['nodes']:
-                    refElement = doc.createElement("nd")
-                    refElement.setAttribute("ref", str(ref))
-                    wayElem.appendChild(refElement)
-                root.appendChild(wayElem)
-
-        if 'relations' in data:
-            for relation in data['relations']:
-                relationElem = doc.createElement("relation")
-                self.defaultAttrs(relationElem, relation)
-                self.tagNodes(doc, relationElem, relation)
-                for member in relation['members']:
-                    memberElem = doc.createElement("member")
-                    memberElem.setAttribute("type", member['type'])
-                    memberElem.setAttribute("ref", str(member['ref']))
-                    memberElem.setAttribute("role", member['role'])
-                    relationElem.appendChild(memberElem)
-                root.appendChild(relationElem)
-
-        return doc.toprettyxml(indent="  ", encoding="UTF-8")
-
 import time, sys
 import os
 import urlparse
