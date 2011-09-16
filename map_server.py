@@ -199,7 +199,7 @@ class OsmXmlOutput:
                 nodeElem.setAttribute("lon", str(node['loc']['lon']))
                 self.defaultAttrs(nodeElem, node)
                 self.tagNodes(doc, nodeElem, node)
-                yield nodeElem.toxml('UTF-8')
+                yield nodeElem.toxml('UTF-8'), '\n'
 
         if 'ways' in data:
             for way in data['ways']:
@@ -210,7 +210,7 @@ class OsmXmlOutput:
                     refElement = doc.createElement("nd")
                     refElement.setAttribute("ref", str(ref))
                     wayElem.appendChild(refElement)
-                yield wayElem.toxml('UTF-8')
+                yield wayElem.toxml('UTF-8'), '\n'
 
         if 'relations' in data:
             for relation in data['relations']:
@@ -223,7 +223,7 @@ class OsmXmlOutput:
                     memberElem.setAttribute("ref", str(member['ref']))
                     memberElem.setAttribute("role", member['role'])
                     relationElem.appendChild(memberElem)
-                relationElem.toxml('UTF-8')
+                relationElem.toxml('UTF-8'), '\n'
 
         yield '</osm>\n'
 
@@ -303,7 +303,7 @@ class Mongosm(object):
         return Response(outputter.iter(data), content_type='text/xml', direct_passthrough=True)
 
     def changesetsRequest(self, request):
-        return Response("Yup")
+        return Response("<boop>%s</boop>" % (xapi_query,))
 
     def getNode(self, request, id):
         api = OsmApi()
@@ -312,6 +312,9 @@ class Mongosm(object):
         outputter = OsmXmlOutput()
         return Response(outputter.toXml(data), content_type='text/xml')
 
+    def getNodeQuery(self, request, xapi_query):
+        return Response("<boop>%s</boop>" % (xapi_query,))
+
     def getWay(self, request, id):
         api = OsmApi()
         data = api.getWayById(long(id))
@@ -319,12 +322,21 @@ class Mongosm(object):
         outputter = OsmXmlOutput()
         return Response(outputter.toXml(data), content_type='text/xml')
 
+    def getWayQuery(self, request, xapi_query):
+        return Response("<boop>%s</boop>" % (xapi_query,))
+
     def getRelation(self, request, id):
         api = OsmApi()
         data = api.getRelationById(long(id))
 
         outputter = OsmXmlOutput()
         return Response(outputter.toXml(data), content_type='text/xml')
+
+    def getRelationQuery(self, request, xapi_query):
+        return Response("<boop>%s</boop>" % (xapi_query,))
+
+    def getPrimitiveQuery(self, request, xapi_query):
+        return Response("<boop>%s</boop>" % (xapi_query,))
 
     def capabilitiesRequest(self, request):
         return Response("""
@@ -340,8 +352,12 @@ class Mongosm(object):
             Rule('/api/0.6/map', endpoint='mapRequest'),
             Rule('/api/0.6/changesets', endpoint='changesetsRequest'),
             Rule('/api/0.6/node/<id>', endpoint='getNode'),
+            Rule('/api/0.6/node<xapi_query>', endpoint='getNodeQuery'),
             Rule('/api/0.6/way/<id>', endpoint='getWay'),
+            Rule('/api/0.6/way<xapi_query>', endpoint='getWayQuery'),
             Rule('/api/0.6/relation/<id>', endpoint='getRelation'),
+            Rule('/api/0.6/relation<xapi_query>', endpoint='getRelationQuery'),
+            Rule('/api/0.6/*<xapi_query>', endpoint='getPrimitiveQuery'),
             Rule('/api/capabilities', endpoint='capabilitiesRequest'),
         ])
 
@@ -365,17 +381,3 @@ if __name__ == '__main__':
     from werkzeug.serving import run_simple
     app = Mongosm()
     run_simple('127.0.0.1', 5000, app, use_debugger=True, use_reloader=True)
-"""
-    import time, sys
-    #bbox = [[46.784,-92.3746],[46.8197,-92.3159]]
-    bbox = [[44.98233,-93.25264],[44.99191,-93.24167]]
-    api = OsmApi()
-    data = api.getBbox(bbox)
-    
-    outputter = OsmXmlOutput()
-    start = time.time()
-    outfile = open(sys.argv[1], 'w')
-    outfile.write(outputter.toXml(data))
-    outfile.close()
-    sys.stderr.write("<!-- XML output %s -->\n" % (time.time() - start))
-"""
