@@ -1,35 +1,18 @@
 import pymongo
 from pymongo import Connection
 from xml.sax.saxutils import escape
+import re
 
 class OsmApi:
     def __init__(self):
         self.client = Connection()
 
-    def buildMongoQuery(self, xapiQuery):
-        q = {}
-        for (key, value) in xapiQuery:
-            if key is 'bbox':
-                (minlat, minlon, maxlat, maxlon) = (value[0][0], value[0][1], value[1][0], value[1][1])
-
-                bboxPolygon = [ [minlon,minlat],
-                                [minlon,maxlat],
-                                [maxlon,maxlat],
-                                [maxlon,minlat] ]
-                q['loc'] = { '$within': { '$polygon': bboxPolygon } }
-            elif key is 'tag_match':
-                (left, right) = value
-                q['tags.%s' % (left,)] = right
-
-        return q
 
     def getNodesInBounds(self, box):
         return self.getNodesQuery([('bbox', box)])
     
     def getNodesQuery(self, query):
-        q = self.buildMongoQuery(query)
-
-        cursor = self.client.osm.nodes.find(q)
+        cursor = self.client.osm.nodes.find(query)
 
         nodes = {}
         for row in cursor:
@@ -46,9 +29,7 @@ class OsmApi:
         return self.getWaysQuery([('bbox', box)])
 
     def getWaysQuery(self, query):
-        q = self.buildMongoQuery(query)
-
-        cursor = self.client.osm.ways.find(q)
+        cursor = self.client.osm.ways.find(query)
 
         ways = {}
         for row in cursor:
@@ -157,10 +138,10 @@ class OsmApi:
         else:
             return {}
 
-    def getPrimitives(self, query):
-        nodes = self.getNodesQuery(query)
+    def getPrimitives(self, xapi_query):
+        nodes = self.getNodesQuery(xapi_query)
 
-        ways = self.getWaysQuery(query)
+        ways = self.getWaysQuery(xapi_query)
 
         nodes = self.getNodesFromWays(ways, nodes)
 
@@ -278,9 +259,35 @@ from werkzeug.routing import Map, Rule
 from werkzeug.exceptions import HTTPException, NotFound
 
 class Mongosm(object):
+    def buildMongoQuery(self, xapiQuery):
+        q = {}
+        groups = re.findall(r'(?:\[(.*?)\])', xapiQuery)
+        for g in groups:
+            (left, right) = g.split('=')
+            if left == '@user':
+                q['user'] = right
+            elif left == '@uid':
+                q['uid'] = long(right)
+            elif left is '@changeset':
+                q['changeset'] = long(right)
+            elif left == 'bbox':
+                (minlon, minlat, maxlon, maxlat) = g[5:].split(',')
+                bboxPolygon = [ [minlon,minlat],
+                                [minlon,maxlat],
+                                [maxlon,maxlat],
+                                [maxlon,minlat] ]
+                q['loc'] = { '$within': { '$polygon': bboxPolygon } }
+            elif right == u'*':
+                q['tags.%s' % (left,)] = {'$exists': True}
+            else:
+                q['tags.%s' % (left,)] = right
+
+        print "Built query: %s" % (q,)
+
+        return q
+
     def mapRequest(self, request):
         (minlon, minlat, maxlon, maxlat) = request.args['bbox'].split(',')
-        print "%s,%s %s,%s" % (minlat, minlon, maxlat, maxlon)
         bbox = [[float(minlat), float(minlon)],[float(maxlat), float(maxlon)]]
         api = OsmApi()
         data = api.getBbox(bbox)
@@ -300,8 +307,9 @@ class Mongosm(object):
         return Response(outputter.iter(data), content_type='text/xml')
 
     def getNodeQuery(self, request, xapi_query):
+        query = self.buildMongoQuery(xapi_query)
+
         api = OsmApi()
-        query = [('tag_match', ('amenity', 'bar'))]
         data = api.getNodes(query)
 
         outputter = OsmXmlOutput()
@@ -315,8 +323,9 @@ class Mongosm(object):
         return Response(outputter.iter(data), content_type='text/xml')
 
     def getWayQuery(self, request, xapi_query):
+        query = self.buildMongoQuery(xapi_query)
+
         api = OsmApi()
-        query = [('tag_match', ('amenity', 'bar'))]
         data = api.getWays(query)
 
         outputter = OsmXmlOutput()
@@ -330,16 +339,18 @@ class Mongosm(object):
         return Response(outputter.iter(data), content_type='text/xml')
 
     def getRelationQuery(self, request, xapi_query):
+        query = self.buildMongoQuery(xapi_query)
+
         api = OsmApi()
-        query = xapi_query
         data = api.getRelations(query)
 
         outputter = OsmXmlOutput()
         return Response(outputter.iter(data), content_type='text/xml')
 
     def getPrimitiveQuery(self, request, xapi_query):
+        query = self.buildMongoQuery(xapi_query)
+
         api = OsmApi()
-        query = [('tag_match', ('amenity', 'bar'))]
         data = api.getPrimitives(query)
 
         outputter = OsmXmlOutput()
@@ -357,14 +368,19 @@ class Mongosm(object):
     def __init__(self):
         self.url_map = Map([
             Rule('/api/0.6/map', endpoint='mapRequest'),
+
             Rule('/api/0.6/changesets', endpoint='changesetsRequest'),
+
             Rule('/api/0.6/node/<id>', endpoint='getNode'),
-            Rule('/api/0.6/node<xapi_query>', endpoint='getNodeQuery'),
             Rule('/api/0.6/way/<id>', endpoint='getWay'),
-            Rule('/api/0.6/way<xapi_query>', endpoint='getWayQuery'),
             Rule('/api/0.6/relation/<id>', endpoint='getRelation'),
+
+            Rule('/api/0.6/node<xapi_query>', endpoint='getNodeQuery'),
+            Rule('/api/0.6/way<xapi_query>', endpoint='getWayQuery'),
             Rule('/api/0.6/relation<xapi_query>', endpoint='getRelationQuery'),
+            
             Rule('/api/0.6/*<xapi_query>', endpoint='getPrimitiveQuery'),
+
             Rule('/api/capabilities', endpoint='capabilitiesRequest'),
         ])
 
