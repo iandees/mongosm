@@ -3,6 +3,9 @@
 import sys
 import os
 import time
+import urllib2
+import StringIO
+import gzip
 from datetime import datetime
 from xml.sax import make_parser
 from xml.sax.handler import ContentHandler
@@ -45,7 +48,7 @@ class OsmChangeHandler(ContentHandler):
         elif name == 'node':
             self.record = {}
             self.fillDefault(attrs)
-            self.record['loc'] = {'lat': float(attrs['lat']),                                  'lon': float(attrs['lon'])}
+            self.record['loc'] = {'lat': float(attrs['lat']), 'lon': float(attrs['lon'])}
         elif name == 'tag':
             # MongoDB doesn't let us have dots in the key names.
             k = attrs['k']
@@ -122,36 +125,76 @@ class OsmChangeHandler(ContentHandler):
         if name in ('node', 'way', 'relation'):
             self.type = name
             if self.action == 'delete':
-                self.record['visable'] = False
+                self.record['visible'] = False
+            if self.type == 'way':
+                nodes = self.client.osm.nodes.find({ 'id': { '$in': self.record['nodes'] } },
+                                                   { 'loc': 1, '_id': 0 })
+                self.record['loc'] = []
+                for node in nodes:
+                    self.record['loc'].append(node['loc'])
             getattr(self, name + 's').append(self.record)
         elif name in ('create', 'modify', 'delete'):
+            if name == 'create': 
+                for coll in ('nodes', 'ways', 'relations'):
+                    if getattr(self, coll):
+                        getattr(self.client.osm, coll).insert(getattr(self, coll))
+            elif name == 'modify':
+                for coll in ('nodes', 'ways', 'relations'):
+                    if getattr(self, coll):
+                        primitive_list = getattr(self, coll)
+                        for prim in primitive_list:
+                            getattr(self.client.osm, coll).update({'id': prim['id']},
+                                                                  prim)
+            elif name == 'delete':
+                for coll in ('nodes', 'ways', 'relations'):
+                    if getattr(self, coll):
+                        primitive_list = getattr(self, coll)
+                        for prim in primitive_list:
+                            getattr(self.client.osm, coll).remove({'id': prim['id']})
             self.action = None
-    def endDocument(self):
-        """Upon document completion, commit the changes"""
-        if not self.record:
-            # We never saw any records.
-            return
-        else:
-            # Check the last record to see if it's in the
-            # database. Complain in the future
-            if getattr(self.client.osm, self.record.type).find_one(
-                {'id': self.record['id'], 'version', self.record['version']}):
-                # In the future, scream
-                pass
-        for coll in ('nodes', 'ways', 'relations'):
-            if getattr(self, coll):
-                getattr(self.client.osm, coll).insert(getattr(self, coll))
         
 if __name__ == "__main__":
-    filename = sys.argv[1]
-
-    if not os.path.exists(filename):
-        print "Path %s doesn't exist." % (filename)
-        sys.exit(-1)
-
     client = Connection()
     parser = make_parser()
-    handler = OsmChangeHandler(client)
-    parser.setContentHandler(handler)
-    parser.parse(open(filename))
+
+    keepGoing = True
+
+    while keepGoing:
+        # Read the state.txt
+        sf = open('state.txt', 'r')
+
+        state = {}
+        for line in sf:
+            if line[0] == '#':
+                continue
+            (k, v) = line.split('=')
+            state[k] = v.strip().replace("\\:", ":")
+
+        # Grab the sequence number and build a URL out of it
+        sqnStr = state['sequenceNumber'].zfill(9)
+        url = "http://planet.openstreetmap.org/minute-replicate/%s/%s/%s.osc.gz" % (sqnStr[0:3], sqnStr[3:6], sqnStr[6:9])
+
+        print "Downloading change file (%s)." % (url)
+        content = urllib2.urlopen(url)
+        content = StringIO.StringIO(content.read())
+        gzipper = gzip.GzipFile(fileobj=content)
+
+        print "Parsing change file."
+        handler = OsmChangeHandler(client)
+        parser.setContentHandler(handler)
+        parser.parse(gzipper)
+
+        # Download the next state file
+        nextSqn = int(state['sequenceNumber']) + 1
+        sqnStr = str(nextSqn).zfill(9)
+        url = "http://planet.openstreetmap.org/minute-replicate/%s/%s/%s.state.txt" % (sqnStr[0:3], sqnStr[3:6], sqnStr[6:9])
+        try:
+            u = urllib2.urlopen(url)
+            statefile = open('state.txt', 'w')
+            statefile.write(u.read())
+            statefile.close()
+        except Exception, e:
+            keepGoing = False
+            print e
+
     client.disconnect()
