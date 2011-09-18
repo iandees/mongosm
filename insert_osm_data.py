@@ -24,6 +24,18 @@ class OsmHandler(ContentHandler):
         self.client.osm.ways.ensure_index([('loc', pymongo.GEO2D)])
         self.client.osm.relations.ensure_index([('id', pymongo.ASCENDING),
                                                 ('version', pymongo.DESCENDING)])
+        self.stats = {'nodes': 0, 'ways': 0, 'relations': 0}
+        self.lastStatString = ""
+        self.statsCount = 0
+
+    def writeStatsToScreen(self):
+        for char in self.lastStatString:
+            sys.stdout.write('\b')
+        self.lastStatString = "%dk nodes, %dk ways, %d relations" % (self.stats['nodes'] / 1000,
+                                                                     self.stats['ways'] / 1000,
+                                                                     self.stats['relations'])
+        sys.stdout.write(self.lastStatString)
+
     def fillDefault(self, attrs):
         """Fill in default record values"""
         self.record['id'] = long(attrs['id'])
@@ -97,21 +109,33 @@ class OsmHandler(ContentHandler):
         (only really used with nodes, ways and relations)"""
         if name == 'node':
             self.records.append(self.record)
-            if len(self.records) > 3000:
+            if len(self.records) > 1500:
                 self.client.osm.nodes.insert(self.records)
                 self.records = []
+                self.writeStatsToScreen()
             self.record = {}
+            self.stats['nodes'] = self.stats['nodes'] + 1
         elif name == 'way':
             nodes = self.client.osm.nodes.find({ 'id': { '$in': self.record['nodes'] } }, { 'loc': 1, '_id': 0 })
             self.record['loc'] = []
             for node in nodes:
                 self.record['loc'].append(node['loc'])
 
-            self.client.osm.ways.insert(self.record, safe=True)
+            self.client.osm.ways.insert(self.record)
             self.record = {}
+            self.statsCount = self.statsCount + 1
+            if self.statsCount > 1000:
+                self.writeStatsToScreen()
+                self.statsCount = 0
+            self.stats['ways'] = self.stats['ways'] + 1
         elif name == 'relation':
             self.client.osm.relations.save(self.record)
             self.record = {}
+            self.statsCount = self.statsCount + 1
+            if self.statsCount > 10:
+                self.writeStatsToScreen()
+                self.statsCount = 0
+            self.stats['relations'] = self.stats['relations'] + 1
 
 if __name__ == "__main__":
     filename = sys.argv[1]
