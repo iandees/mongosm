@@ -310,10 +310,10 @@ class Mongosm(object):
                 q['changeset'] = long(right)
             elif left == 'bbox':
                 (minlon, minlat, maxlon, maxlat) = right.split(',')
-                bboxPolygon = [ [float(minlon),float(minlat)],
-                                [float(minlon),float(maxlat)],
-                                [float(maxlon),float(maxlat)],
-                                [float(maxlon),float(minlat)] ]
+                bboxPolygon = [ [float(minlat),float(minlon)],
+                                [float(minlat),float(maxlon)],
+                                [float(maxlat),float(maxlon)],
+                                [float(maxlat),float(minlon)] ]
                 q['loc'] = { '$within': { '$polygon': bboxPolygon } }
             elif left == 'poly':
                 decodedPolygon = self.decodePolyline(right)
