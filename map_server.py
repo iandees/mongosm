@@ -7,10 +7,6 @@ class OsmApi:
     def __init__(self):
         self.client = Connection()
 
-
-    def getNodesInBounds(self, box):
-        return self.getNodesQuery([('bbox', box)])
-    
     def getNodesQuery(self, query):
         cursor = self.client.osm.nodes.find(query)
 
@@ -152,12 +148,12 @@ class OsmApi:
 
         start = time.time()
         
-        nodes = self.getNodesInBounds(bbox)
+        nodes = self.getNodesQuery(bbox)
 
         timeA = time.time()
         sys.stderr.write("<!-- Get nodes in bbox %s -->\n" % (timeA - start))
 
-        ways = self.getWaysInBounds(bbox)
+        ways = self.getWaysQuery(bbox)
 
         timeB = time.time()
         sys.stderr.write("<!-- Get ways in bbox %s -->\n" % (timeB - timeA))
@@ -176,10 +172,11 @@ class OsmApi:
         timeE = time.time()
         sys.stderr.write("<!-- Get relations %s -->\n" % (timeE - timeD))
         
-        doc = {'bounds': {'minlat': bbox[0][0],
-                          'minlon': bbox[0][1],
-                          'maxlat': bbox[1][0],
-                          'maxlon': bbox[1][1]},
+        bboxArr = bbox['loc']['$within']['$polygon']
+        doc = {'bounds': {'minlat': bboxArr[0][0],
+                          'minlon': bboxArr[0][1],
+                          'maxlat': bboxArr[2][0],
+                          'maxlon': bboxArr[2][1]},
                'nodes': nodes.values(),
                'ways': ways.values(),
                'relations': relations}
@@ -271,11 +268,11 @@ class Mongosm(object):
             elif left is '@changeset':
                 q['changeset'] = long(right)
             elif left == 'bbox':
-                (minlon, minlat, maxlon, maxlat) = g[5:].split(',')
-                bboxPolygon = [ [minlon,minlat],
-                                [minlon,maxlat],
-                                [maxlon,maxlat],
-                                [maxlon,minlat] ]
+                (minlon, minlat, maxlon, maxlat) = right.split(',')
+                bboxPolygon = [ [float(minlon),float(minlat)],
+                                [float(minlon),float(maxlat)],
+                                [float(maxlon),float(maxlat)],
+                                [float(maxlon),float(minlat)] ]
                 q['loc'] = { '$within': { '$polygon': bboxPolygon } }
             elif right == u'*':
                 q['tags.%s' % (left,)] = {'$exists': True}
@@ -287,10 +284,12 @@ class Mongosm(object):
         return q
 
     def mapRequest(self, request):
-        (minlon, minlat, maxlon, maxlat) = request.args['bbox'].split(',')
-        bbox = [[float(minlat), float(minlon)],[float(maxlat), float(maxlon)]]
+        #(minlon, minlat, maxlon, maxlat) = request.args['bbox'].split(',')
+        #bbox = [[float(minlat), float(minlon)],[float(maxlat), float(maxlon)]]
+        query = self.buildMongoQuery('[bbox=%s]' % (request.args['bbox'],))
+
         api = OsmApi()
-        data = api.getBbox(bbox)
+        data = api.getBbox(query)
 
         outputter = OsmXmlOutput()
 
