@@ -256,6 +256,47 @@ from werkzeug.routing import Map, Rule
 from werkzeug.exceptions import HTTPException, NotFound
 
 class Mongosm(object):
+    def decodePolyline(self, encoded):
+        i = 0
+        lat = 0.0
+        lon = 0.0
+        points = []
+
+        while i < len(encoded):
+            b = 0
+            shift = 0
+            result = 0
+            while True:
+                b = ord(encoded[i]) - 63
+                i = i + 1
+                result |= (b & 0x1f) << shift
+                shift = shift + 5
+                if b < 0x20:
+                    break
+            if (result & 1) > 0:
+                dlat = ~(result >> 1)
+            else:
+                dlat = (result >> 1)
+            lat = lat + dlat
+            
+            shift = 0
+            result = 0
+            while True:
+                b = ord(encoded[i]) - 63
+                i = i + 1
+                result |= (b & 0x1f) << shift
+                shift = shift + 5
+                if b < 0x20:
+                    break
+            if (result & 1) > 0:
+                dlng = ~(result >> 1)
+            else:
+                dlng = (result >> 1)
+            lon = lon + dlng
+
+            points.append([lat * 1e-5, lon * 1e-5])
+        return points
+            
     def buildMongoQuery(self, xapiQuery):
         q = {}
         groups = re.findall(r'(?:\[(.*?)\])', xapiQuery)
@@ -274,6 +315,9 @@ class Mongosm(object):
                                 [float(maxlon),float(maxlat)],
                                 [float(maxlon),float(minlat)] ]
                 q['loc'] = { '$within': { '$polygon': bboxPolygon } }
+            elif left == 'poly':
+                decodedPolygon = self.decodePolyline(right)
+                q['loc'] = { '$within': { '$polygon': decodedPolygon } }
             elif right == u'*':
                 q['tags.%s' % (left,)] = {'$exists': True}
             else:
