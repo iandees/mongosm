@@ -16,6 +16,7 @@ class OsmHandler(ContentHandler):
         self.records = []
         self.record = {}
         self.client = client
+        """
         self.client.osm.nodes.ensure_index([('loc', pymongo.GEO2D)])
         self.client.osm.nodes.ensure_index([('id', pymongo.ASCENDING),
                                             ('version', pymongo.DESCENDING)])
@@ -24,6 +25,7 @@ class OsmHandler(ContentHandler):
         self.client.osm.ways.ensure_index([('loc', pymongo.GEO2D)])
         self.client.osm.relations.ensure_index([('id', pymongo.ASCENDING),
                                                 ('version', pymongo.DESCENDING)])
+        """
         self.stats = {'nodes': 0, 'ways': 0, 'relations': 0}
         self.lastStatString = ""
         self.statsCount = 0
@@ -38,9 +40,10 @@ class OsmHandler(ContentHandler):
 
     def fillDefault(self, attrs):
         """Fill in default record values"""
-        self.record['id'] = long(attrs['id'])
+        self.record['_id'] = long(attrs['id'])
         self.record['timestamp'] = self.isoToTimestamp(attrs['timestamp'])
-        self.record['tags'] = {}
+        self.record['tags'] = [] 
+        self.record['keys'] = []
         if attrs.has_key('user'):
             self.record['user'] = attrs['user']
         if attrs.has_key('uid'):
@@ -64,10 +67,12 @@ class OsmHandler(ContentHandler):
         elif name == 'changeset':
             self.fillDefault(attrs)
         elif name == 'tag':
-            # MongoDB doesn't let us have dots in the key names.
             k = attrs['k']
-            k = k.replace('.', ',,')
-            self.record['tags'][k] = attrs['v']
+            v = attrs['v']
+            # MongoDB doesn't let us have dots in the key names.
+            #k = k.replace('.', ',,')
+            self.record['tags'].append((k, v))
+            self.record['keys'].append(k)
         elif name == 'way':
             # Insert remaining nodes
             if len(self.records) > 0:
@@ -90,18 +95,18 @@ class OsmHandler(ContentHandler):
             self.record['members'].append(member)
             
             if attrs['type'] == 'way':
-                ways2relations = self.client.osm.ways.find_one({ 'id' : ref})
+                ways2relations = self.client.osm.ways.find_one({ '_id' : ref})
                 if ways2relations:
                     if 'relations' not in ways2relations:
                         ways2relations['relations'] = []
-                    ways2relations['relations'].append(self.record['id'])
+                    ways2relations['relations'].append(self.record['_id'])
                     self.client.osm.ways.save(ways2relations)
             elif attrs['type'] == 'node':
-                nodes2relations = self.client.osm.nodes.find_one({ 'id' : ref})
+                nodes2relations = self.client.osm.nodes.find_one({ '_id' : ref})
                 if nodes2relations:
                     if 'relations' not in nodes2relations:
                         nodes2relations['relations'] = []
-                    nodes2relations['relations'].append(self.record['id'])
+                    nodes2relations['relations'].append(self.record['_id'])
                     self.client.osm.nodes.save(nodes2relations)
         
     def endElement(self, name):
@@ -116,7 +121,7 @@ class OsmHandler(ContentHandler):
             self.record = {}
             self.stats['nodes'] = self.stats['nodes'] + 1
         elif name == 'way':
-            nodes = self.client.osm.nodes.find({ 'id': { '$in': self.record['nodes'] } }, { 'loc': 1, '_id': 0 })
+            nodes = self.client.osm.nodes.find({ '_id': { '$in': self.record['nodes'] } }, { 'loc': 1, '_id': 0 })
             self.record['loc'] = []
             for node in nodes:
                 self.record['loc'].append(node['loc'])

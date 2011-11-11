@@ -48,7 +48,7 @@ class OsmApi:
             for nodeId in way['nodes']:
                 nodeIds.add(nodeId)
 
-        cursor = self.client.osm.nodes.find({'id': {'$in': list(nodeIds)} })
+        cursor = self.client.osm.nodes.find({'_id': {'$in': list(nodeIds)} })
 
         for row in cursor:
             if row['_id'] not in existingNodes:
@@ -61,7 +61,7 @@ class OsmApi:
         wayIds = set()
 
         for node in nodes:
-            wayIdsFromNode = self.getWayIdsUsingNodeId(node['id'])
+            wayIdsFromNode = self.getWayIdsUsingNodeId(node['_id'])
 
             for wayId in wayIdsFromNode:
                 wayIds.add(wayId)
@@ -69,7 +69,7 @@ class OsmApi:
         ways = []
 
         for wayId in wayIds:
-            way = self.client.osm.ways.find_one({'id' : wayId})
+            way = self.client.osm.ways.find_one({'_id' : wayId})
             if way:
                 ways.append(way)
             else:
@@ -78,7 +78,7 @@ class OsmApi:
         return ways
 
     def getWayIdsUsingNodeId(self, id):
-        cursor = self.client.osm.nodes.find_one({'id' : id }, ['ways'])
+        cursor = self.client.osm.nodes.find_one({'_id' : id }, ['ways'])
         if cursor and 'ways' in cursor:
             return cursor['ways']
         else:
@@ -88,7 +88,7 @@ class OsmApi:
         relationIds = set()
         
         for (wid, way) in ways.items():
-            id = way['id']
+            id = way['_id']
             relationIdsFromWay = self.getRelationIdsUsingWayId(id)
 
             for relationId in relationIdsFromWay:
@@ -97,7 +97,7 @@ class OsmApi:
         relations = []
 
         for relationId in relationIds:
-            relation = self.client.osm.relations.find_one({'id' : relationId})
+            relation = self.client.osm.relations.find_one({'_id' : relationId})
             if relation:
                 relations.append(relation)
             else:
@@ -106,14 +106,14 @@ class OsmApi:
         return relations
 
     def getRelationIdsUsingWayId(self, id):
-        cursor = self.client.osm.ways.find_one({'id' : id }, ['relations'])
+        cursor = self.client.osm.ways.find_one({'_id' : id }, ['relations'])
         if cursor and 'relations' in cursor:
             return cursor['relations']
         else:
             return []
 
     def getNodeById(self, id):
-        cursor = self.client.osm.nodes.find_one({'id' : id })
+        cursor = self.client.osm.nodes.find_one({'_id' : id })
         if cursor:
             return {'nodes': [cursor]}
         else:
@@ -121,14 +121,14 @@ class OsmApi:
 
     def getWayById(self, id):
         print id
-        cursor = self.client.osm.ways.find_one({'id' : id })
+        cursor = self.client.osm.ways.find_one({'_id' : id })
         if cursor:
             return {'ways': [cursor]}
         else:
             return {}
 
     def getRelationById(self, id):
-        cursor = self.client.osm.relations.ways.find_one({'id' : id })
+        cursor = self.client.osm.relations.ways.find_one({'_id' : id })
         if cursor:
             return {'relations': [cursor]}
         else:
@@ -184,20 +184,23 @@ class OsmApi:
         return doc
 
 class OsmXmlOutput:
-    def addNotNullAttr(self, mappable, mappableElement, name):
+    def addNotNullAttr(self, mappable, mappableElement, name, outName=None):
+        if not outName:
+            outName = name
         if name in mappable:
-            mappableElement.setAttribute(escape(name), escape(unicode(mappable[name])))
+            mappableElement.setAttribute(escape(outName), escape(unicode(mappable[name])))
 
     def defaultAttrs(self, mappableElement, mappable):
-        self.addNotNullAttr(mappable, mappableElement, "id")
+        self.addNotNullAttr(mappable, mappableElement, "_id", "id")
         self.addNotNullAttr(mappable, mappableElement, "version")
         self.addNotNullAttr(mappable, mappableElement, "user")
 
     def tagNodes(self, doc, mappableElement, mappable):
-        for tag in mappable['tags'].items():
+        for mappable in mappable['tags']:
             tagElement = doc.createElement("tag")
-            tagElement.setAttribute("k", tag[0])
-            tagElement.setAttribute("v", tag[1])
+            k,v = mappable.items()[0]
+            tagElement.setAttribute("k", k)
+            tagElement.setAttribute("v", v)
             mappableElement.appendChild(tagElement)
 
     def iter(self, data):
@@ -446,4 +449,4 @@ class Mongosm(object):
 if __name__ == '__main__':
     from werkzeug.serving import run_simple
     app = Mongosm()
-    run_simple('127.0.0.1', 5000, app, use_debugger=True, use_reloader=True)
+    run_simple('0.0.0.0', 5000, app, use_debugger=True, use_reloader=True)
