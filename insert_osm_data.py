@@ -42,7 +42,8 @@ class OsmHandler(object):
     def fillDefault(self, attrs):
         """Fill in default record values"""
         record = dict(_id=long(attrs['id']),
-                      ts=self.isoToTimestamp(attrs['timestamp']),
+                      #ts=self.isoToTimestamp(attrs['timestamp']),
+                      ts=attrs['timestamp'],
                       tg=[],
                       ky=[])
         #record['_id'] = long(attrs['id'])
@@ -65,7 +66,8 @@ class OsmHandler(object):
         return time.mktime(t.timetuple())
 
     def parse(self, file_obj):
-        records = []
+        nodes = []
+        ways = []
         
         for (event, elem) in iterparse(file_obj, events=('start', 'end')):
             name = elem.tag
@@ -74,8 +76,9 @@ class OsmHandler(object):
                 """Parse the XML element at the start"""
                 if name == 'node':
                     record = self.fillDefault(attrs)
-                    record['loc'] = [float(attrs['lat']),
-                                     float(attrs['lon'])]
+                    loc = [float(attrs['lat']),
+                           float(attrs['lon'])]
+                    record['loc'] = loc
                 elif name == 'tag':
                     k = attrs['k']
                     v = attrs['v']
@@ -85,17 +88,17 @@ class OsmHandler(object):
                     record['ky'].append(k)
                 elif name == 'way':
                     # Insert remaining nodes
-                    if len(records) > 0:
-                        self.client.osm.nodes.insert(records)
-                        records = []
+                    if len(nodes) > 0:
+                        self.client.osm.nodes.insert(nodes)
+                        nodes = []
 
                     record = self.fillDefault(attrs)
                     record['nd'] = []
                 elif name == 'relation':
                     # Insert remaining ways
-                    if len(records) > 0:
-                        self.client.osm.ways.insert(records)
-                        records = []
+                    if len(ways) > 0:
+                        self.client.osm.ways.insert(ways)
+                        ways = []
 
                     record = self.fillDefault(attrs)
                     record['mm'] = []
@@ -125,21 +128,33 @@ class OsmHandler(object):
                 """Finish parsing an element
                 (only really used with nodes, ways and relations)"""
                 if name == 'node':
-                    records.append(record)
-                    if len(records) > 1500:
-                        self.client.osm.nodes.insert(records)
-                        records = []
+                    if len(record['tg']) == 0:
+                        del record['tg']
+                    if len(record['ky']) == 0:
+                        del record['ky']
+                    nodes.append(record)
+                    if len(nodes) > 2500:
+                        self.client.osm.nodes.insert(nodes)
+                        nodes = []
                         self.writeStatsToScreen()
 
                     record = {}
                     self.stat_nodes = self.stat_nodes + 1
                 elif name == 'way':
-                    nodes = self.client.osm.nodes.find({ '_id': { '$in': record['nd'] } }, { 'loc': 1, '_id': 0 })
+                    if len(record['tg']) == 0:
+                        del record['tg']
+                    if len(record['ky']) == 0:
+                        del record['ky']
+                    nds = self.client.osm.nodes.find({ '_id': { '$in': record['nd'] } }, { 'loc': 1, '_id': 0 })
                     record['loc'] = []
-                    for node in nodes:
-                        record['loc'].append(node['loc'])
+                    for node in nds:
+                        record['loc'].append(node)
 
-                    self.client.osm.ways.insert(record)
+                    ways.append(record)
+                    if len(ways) > 2000:
+                        self.client.osm.ways.insert(ways)
+                        ways = []
+
                     record = {}
                     self.statsCount = self.statsCount + 1
                     if self.statsCount > 1000:
@@ -147,6 +162,10 @@ class OsmHandler(object):
                         self.statsCount = 0
                     self.stat_ways = self.stat_ways + 1
                 elif name == 'relation':
+                    if len(record['tg']) == 0:
+                        del record['tg']
+                    if len(record['ky']) == 0:
+                        del record['ky']
                     self.client.osm.relations.save(record)
                     record = {}
                     self.statsCount = self.statsCount + 1
