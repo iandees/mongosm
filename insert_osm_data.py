@@ -69,9 +69,13 @@ class OsmHandler(object):
         nodes = []
         ways = []
         
-        for (event, elem) in iterparse(file_obj, events=('start', 'end')):
+        context = iter(iterparse(file_obj, events=('start', 'end')))
+        event, root = context.next()
+        
+        for (event, elem) in context:
             name = elem.tag
             attrs = elem.attrib
+            
             if 'start' == event:
                 """Parse the XML element at the start"""
                 if name == 'node':
@@ -174,6 +178,7 @@ class OsmHandler(object):
                         self.statsCount = 0
                     self.stat_relations = self.stat_relations + 1
             elem.clear()
+            root.clear()
 
 if __name__ == "__main__":
     filename = sys.argv[1]
