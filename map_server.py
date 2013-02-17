@@ -25,7 +25,8 @@ class OsmApi:
         return self.getWaysQuery([('bbox', box)])
 
     def getWaysQuery(self, query):
-        cursor = self.client.osm.ways.find(query)
+        ways_query = {'loc.loc':query['loc']}
+        cursor = self.client.osm.ways.find(ways_query)
 
         ways = {}
         for row in cursor:

@@ -15,16 +15,17 @@ class OsmHandler(object):
     """Base class for parsing OSM XML data"""
     def __init__(self, client):
         self.client = client
-        """
+
         self.client.osm.nodes.ensure_index([('loc', pymongo.GEO2D)])
         self.client.osm.nodes.ensure_index([('id', pymongo.ASCENDING),
                                             ('version', pymongo.DESCENDING)])
+
+        self.client.osm.ways.ensure_index([('loc.loc', pymongo.GEO2D)])
         self.client.osm.ways.ensure_index([('id', pymongo.ASCENDING),
                                            ('version', pymongo.DESCENDING)])
-        self.client.osm.ways.ensure_index([('loc', pymongo.GEO2D)])
+
         self.client.osm.relations.ensure_index([('id', pymongo.ASCENDING),
                                                 ('version', pymongo.DESCENDING)])
-        """
         self.stat_nodes = 0
         self.stat_ways = 0
         self.stat_relations = 0
@@ -40,10 +41,13 @@ class OsmHandler(object):
         sys.stdout.write(self.lastStatString)
 
     def fillDefault(self, attrs):
+        ts = None
+        if 'timestamp' in attrs:
+            ts=attrs['timestamp']
         """Fill in default record values"""
         record = dict(_id=long(attrs['id']),
                       #ts=self.isoToTimestamp(attrs['timestamp']),
-                      ts=attrs['timestamp'],
+                      ts=ts,
                       tg=[],
                       ky=[])
         #record['_id'] = long(attrs['id'])
