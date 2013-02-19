@@ -20,7 +20,7 @@ class OsmHandler(object):
         self.client.osm.nodes.ensure_index([('id', pymongo.ASCENDING),
                                             ('version', pymongo.DESCENDING)])
 
-        self.client.osm.ways.ensure_index([('loc.loc', pymongo.GEO2D)])
+        self.client.osm.ways.ensure_index([('loc', pymongo.GEO2D)])
         self.client.osm.ways.ensure_index([('id', pymongo.ASCENDING),
                                            ('version', pymongo.DESCENDING)])
 
@@ -42,12 +42,10 @@ class OsmHandler(object):
 
     def fillDefault(self, attrs):
         ts = None
-        if 'timestamp' in attrs:
-            ts=attrs['timestamp']
         """Fill in default record values"""
         record = dict(_id=long(attrs['id']),
                       #ts=self.isoToTimestamp(attrs['timestamp']),
-                      ts=ts,
+                      ts=attrs['timestamp'] if 'timestamp' in attrs else None,
                       tg=[],
                       ky=[])
         #record['_id'] = long(attrs['id'])
@@ -156,7 +154,7 @@ class OsmHandler(object):
                     nds = self.client.osm.nodes.find({ '_id': { '$in': record['nd'] } }, { 'loc': 1, '_id': 0 })
                     record['loc'] = []
                     for node in nds:
-                        record['loc'].append(node)
+                        record['loc'].append(node['loc'])
 
                     ways.append(record)
                     if len(ways) > 2000:

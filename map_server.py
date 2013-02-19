@@ -25,8 +25,7 @@ class OsmApi:
         return self.getWaysQuery([('bbox', box)])
 
     def getWaysQuery(self, query):
-        ways_query = {'loc.loc':query['loc']}
-        cursor = self.client.osm.ways.find(ways_query)
+        cursor = self.client.osm.ways.find(query)
 
         ways = {}
         for row in cursor:
@@ -193,8 +192,9 @@ class OsmXmlOutput:
 
     def defaultAttrs(self, mappableElement, mappable):
         self.addNotNullAttr(mappable, mappableElement, "_id", "id")
-        self.addNotNullAttr(mappable, mappableElement, "version")
-        self.addNotNullAttr(mappable, mappableElement, "user")
+        self.addNotNullAttr(mappable, mappableElement, "v",   "version")
+        self.addNotNullAttr(mappable, mappableElement, "un",  "user")
+        self.addNotNullAttr(mappable, mappableElement, "ts",  "timestamp")
 
     def tagNodes(self, doc, mappableElement, mappable):
         if 'tg' in mappable:
@@ -243,7 +243,7 @@ class OsmXmlOutput:
                 relationElem = doc.createElement("relation")
                 self.defaultAttrs(relationElem, relation)
                 self.tagNodes(doc, relationElem, relation)
-                for member in relation['members']:
+                for member in relation['mm']:
                     memberElem = doc.createElement("member")
                     memberElem.setAttribute("type", member['type'])
                     memberElem.setAttribute("ref", str(member['ref']))
