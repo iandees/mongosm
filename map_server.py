@@ -45,7 +45,7 @@ class OsmApi:
         nodeIds = set() 
 
         for way in ways.values():
-            for nodeId in way['nodes']:
+            for nodeId in way['nd']:
                 nodeIds.add(nodeId)
 
         cursor = self.client.osm.nodes.find({'_id': {'$in': list(nodeIds)} })
@@ -192,16 +192,18 @@ class OsmXmlOutput:
 
     def defaultAttrs(self, mappableElement, mappable):
         self.addNotNullAttr(mappable, mappableElement, "_id", "id")
-        self.addNotNullAttr(mappable, mappableElement, "version")
-        self.addNotNullAttr(mappable, mappableElement, "user")
+        self.addNotNullAttr(mappable, mappableElement, "v",   "version")
+        self.addNotNullAttr(mappable, mappableElement, "un",  "user")
+        self.addNotNullAttr(mappable, mappableElement, "ts",  "timestamp")
 
     def tagNodes(self, doc, mappableElement, mappable):
-        for mappable in mappable['tags']:
-            tagElement = doc.createElement("tag")
-            k,v = mappable.items()[0]
-            tagElement.setAttribute("k", k)
-            tagElement.setAttribute("v", v)
-            mappableElement.appendChild(tagElement)
+        if 'tg' in mappable:
+            for mappable in mappable['tg']:
+                tagElement = doc.createElement("tag")
+                k,v = mappable
+                tagElement.setAttribute("k", k)
+                tagElement.setAttribute("v", v)
+                mappableElement.appendChild(tagElement)
 
     def iter(self, data):
         from xml.dom.minidom import Document
@@ -219,8 +221,8 @@ class OsmXmlOutput:
         if 'nodes' in data:
             for node in data['nodes']:
                 nodeElem = doc.createElement("node")
-                nodeElem.setAttribute("lat", str(node['loc']['lat']))
-                nodeElem.setAttribute("lon", str(node['loc']['lon']))
+                nodeElem.setAttribute("lat", str(node['loc'][0]))
+                nodeElem.setAttribute("lon", str(node['loc'][1]))
                 self.defaultAttrs(nodeElem, node)
                 self.tagNodes(doc, nodeElem, node)
                 yield "%s\n" % (nodeElem.toxml('UTF-8'),)
@@ -230,7 +232,7 @@ class OsmXmlOutput:
                 wayElem = doc.createElement("way")
                 self.defaultAttrs(wayElem, way)
                 self.tagNodes(doc, wayElem, way)
-                for ref in way['nodes']:
+                for ref in way['nd']:
                     refElement = doc.createElement("nd")
                     refElement.setAttribute("ref", str(ref))
                     wayElem.appendChild(refElement)
@@ -241,7 +243,7 @@ class OsmXmlOutput:
                 relationElem = doc.createElement("relation")
                 self.defaultAttrs(relationElem, relation)
                 self.tagNodes(doc, relationElem, relation)
-                for member in relation['members']:
+                for member in relation['mm']:
                     memberElem = doc.createElement("member")
                     memberElem.setAttribute("type", member['type'])
                     memberElem.setAttribute("ref", str(member['ref']))
