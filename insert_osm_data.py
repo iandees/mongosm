@@ -151,10 +151,13 @@ class OsmHandler(object):
                         del record['tg']
                     if len(record['ky']) == 0:
                         del record['ky']
-                    nds = dict((record['_id'], record) for record in self.client.osm.nodes.find({ '_id': { '$in': record['nd'] } }, { 'loc': 1, '_id': 1 }))
+                    nds = dict((rec['_id'], rec) for rec in self.client.osm.nodes.find({ '_id': { '$in': record['nd'] } }, { 'loc': 1, '_id': 1 }))
                     record['loc'] = []
                     for node in record['nd']:
-                        record['loc'].append(nds[node]['loc'])
+                        if node in nds:
+                            record['loc'].append(nds[node]['loc'])
+                        else:
+                            print 'node not found: '+ str(node)
 
                     ways.append(record)
                     if len(ways) > 2000:
